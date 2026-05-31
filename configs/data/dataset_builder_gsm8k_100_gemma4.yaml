@@ -1,0 +1,37 @@
+round_id: gsm8k-gemma4-100-r1
+source_type: hf_dataset
+source_dataset: openai/gsm8k
+source_dataset_revision: main
+source_questions_path: null
+source_subset: main
+source_split: train
+source_question_field: question
+source_limit: 100
+code_version: local-dev
+hub_dataset_id: avreymi/reasoning-pruning-pt-gsm8k-100-gemma4-r1
+private: true
+
+generator:
+  provider: transformers
+  model_id: google/gemma-4-E2B-it
+
+decision:
+  provider: gemini-json
+  model_id: gemini-3.1-flash-lite
+  api_key_env: GEMINI_API_KEY
+  prompt_version: conservative-skip-v1
+
+generation:
+  max_new_tokens: 512
+  temperature: 0.7
+  do_sample: true
+
+pruning:
+  conservative: true
+  require_following_step: true
+  max_output_tokens: 256
+  temperature: 0.0
+
+max_pruning_depth: 1
+max_examples_per_question: 1
+unit_split_strategy: numbered_or_lines

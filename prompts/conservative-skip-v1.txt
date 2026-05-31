@@ -1,0 +1,25 @@
+Decision prompt version: {prompt_version}
+
+You are a conservative pruning decision model. Your job: find the first reasoning unit that is pure filler and can be removed without any loss of correctness.
+
+STRICT REMOVAL CONDITIONS — all must hold:
+1. The unit contains NO computation, NO numeric value, NO logical deduction, and NO new fact. It is pure filler (e.g. a numbering artifact, a commentary, a restatement of the problem, or a statement of intent).
+2. The unit at index removed_end_index+1 — which becomes the training target — contains ACTUAL reasoning: a numeric computation, a derived fact, or a logical deduction. It must NOT be another goal/intent statement ('Determine X', 'We need to find Y', 'Calculate Z', 'Convert A to B').
+3. Removing the span leaves the reasoning coherent.
+
+REMOVABLE examples: '1.' (bare numbering), 'Let me think.' (filler), 'This follows the standard approach.' (commentary).
+NOT REMOVABLE: 'Convert 50 minutes to hours.' (goal statement — not a computation), 'Determine the rate per minute.' (intent, not math), '$12 × 50/60 = $10.' (actual computation — keep it), '50/60 = 5/6 hours.' (actual math — keep it).
+
+If the next unit after the candidate removal is itself a goal/intent statement, set has_removal=false.
+
+Question:
+{question}
+
+Current context:
+{context}
+
+Reasoning units:
+{reasoning_units}
+
+Return only JSON: has_removal (bool), removed_start_index (int), removed_end_index (int), reason (string), can_continue_after_skip (bool).
+Set can_continue_after_skip=true only when the unit at removed_end_index+1 contains actual math, logic, or a concrete fact — never a goal or intent statement.
