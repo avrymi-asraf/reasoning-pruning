@@ -1,10 +1,10 @@
 """Build canonical pruning-transition rows for the artifact flow.
 
-This module is the row-builder layer described in AGENTS.md: it turns a
-question, generated reasoning units, and a pruning decision into the canonical
-`input_x -> target_y` dataset contract. It is called by the automatic PT dataset
-builder locally and can be reused in Hugging Face Jobs before rows are converted
-to TRL prompt/completion examples.
+This module is the row-builder layer in the project architecture: it turns a
+question, the context passed to G, G's generated trace (with split units), and
+the pruning decision into the canonical dataset contract. It is called by the
+automatic PT dataset builder locally and in Hugging Face Jobs scripts before
+rows are converted to TRL prompt/completion training examples.
 """
 
 from __future__ import annotations
@@ -20,17 +20,12 @@ def build_pruning_transition_example(
     reasoning_steps: list[str],
     removable_index: int,
     depth: int,
-    source_model: str,
+    generator_model: str,
     round_id: str,
-    original_trace: str | None = None,
-    source_model_revision: str | None = None,
-    source_dataset: str | None = None,
-    source_dataset_revision: str | None = None,
+    context_before_generation: str | None = None,
+    generator_model_revision: str | None = None,
     decision_model: str | None = None,
-    decision_config: Any | None = None,
-    generation_config: Any | None = None,
-    pruning_config: Any | None = None,
-    code_version: str | None = None,
+    decision_reason: str | None = None,
 ) -> dict[str, Any]:
     if removable_index < 0 or removable_index >= len(reasoning_steps):
         raise ValueError("removable_index is outside the reasoning path")
@@ -39,76 +34,65 @@ def build_pruning_transition_example(
 
     return build_pruning_transition_row(
         question=question,
-        reasoning_units=reasoning_steps,
+        context_before_generation=context_before_generation or f"Question:\n{question}",
+        generated_trace="\n".join(reasoning_steps),
+        generated_units=reasoning_steps,
         removed_start_index=removable_index,
         removed_end_index=removable_index,
         depth=depth,
-        source_model=source_model,
+        generator_model=generator_model,
         round_id=round_id,
-        original_trace=original_trace,
-        source_model_revision=source_model_revision,
-        source_dataset=source_dataset,
-        source_dataset_revision=source_dataset_revision,
+        generator_model_revision=generator_model_revision,
         decision_model=decision_model,
-        decision_config=decision_config,
-        generation_config=generation_config,
-        pruning_config=pruning_config,
-        code_version=code_version,
+        decision_reason=decision_reason,
     )
 
 
 def build_pruning_transition_row(
     *,
     question: str,
-    reasoning_units: list[str],
+    context_before_generation: str,
+    generated_trace: str,
+    generated_units: list[str],
     removed_start_index: int,
     removed_end_index: int,
     depth: int,
-    source_model: str,
+    generator_model: str,
     round_id: str,
-    original_trace: str | None = None,
-    source_model_revision: str | None = None,
-    source_dataset: str | None = None,
-    source_dataset_revision: str | None = None,
+    generator_model_revision: str | None = None,
     decision_model: str | None = None,
-    decision_config: Any | None = None,
-    generation_config: Any | None = None,
-    pruning_config: Any | None = None,
-    code_version: str | None = None,
     decision_reason: str | None = None,
 ) -> dict[str, Any]:
-    if removed_start_index < 0 or removed_start_index >= len(reasoning_units):
+    if removed_start_index < 0 or removed_start_index >= len(generated_units):
         raise ValueError("removed_start_index is outside the reasoning path")
-    if removed_end_index < removed_start_index or removed_end_index >= len(reasoning_units):
+    if removed_end_index < removed_start_index or removed_end_index >= len(generated_units):
         raise ValueError("removed_end_index is outside the reasoning path")
     next_index = removed_end_index + 1
-    if next_index >= len(reasoning_units):
+    if next_index >= len(generated_units):
         raise ValueError("removed span must have a following useful step")
 
-    prefix = "\n".join(reasoning_units[:removed_start_index]) if removed_start_index > 0 else "(empty)"
-    input_x = f"Question:\n{question}\n\nUseful reasoning prefix:\n{prefix}"
+    useful_prefix = generated_units[:removed_start_index]
+    if useful_prefix:
+        input_x = context_before_generation + "\n" + "\n".join(useful_prefix)
+    else:
+        input_x = context_before_generation
 
     return {
         "id": _stable_row_id(round_id, question, depth, removed_start_index, removed_end_index),
         "question": question,
-        "original_trace": original_trace,
+        "context_before_generation": context_before_generation,
+        "generated_trace": generated_trace,
+        "generated_units": generated_units,
         "input_x": input_x,
-        "target_y": reasoning_units[next_index],
+        "target_y": generated_units[next_index],
         "pruning_depth": depth,
         "metadata": {
-            "source_model": source_model,
-            "source_model_revision": source_model_revision,
-            "round_id": round_id,
-            "source_dataset": source_dataset,
-            "source_dataset_revision": source_dataset_revision,
+            "generator_model": generator_model,
+            "generator_model_revision": generator_model_revision,
             "decision_model": decision_model,
-            "decision_config": decision_config,
-            "removed_span": "\n".join(reasoning_units[removed_start_index : removed_end_index + 1]),
+            "removed_span": generated_units[removed_start_index : removed_end_index + 1],
             "removed_start_index": removed_start_index,
             "removed_end_index": removed_end_index,
-            "generation_config": generation_config,
-            "pruning_config": pruning_config,
-            "code_version": code_version,
             "decision_reason": decision_reason,
         },
     }
@@ -144,7 +128,7 @@ def _stable_row_id(
 
 def smoke_transition_examples(
     *,
-    source_model: str = "google/gemma-4-E2B-it",
+    generator_model: str = "google/gemma-4-E2B-it",
     round_id: str = "smoke-r0",
 ) -> list[dict[str, Any]]:
     seeds = [
@@ -188,9 +172,8 @@ def smoke_transition_examples(
             reasoning_steps=item["steps"],
             removable_index=1,
             depth=index,
-            source_model=source_model,
+            generator_model=generator_model,
             round_id=round_id,
-            original_trace="\n".join(item["steps"]),
         )
         for index, item in enumerate(seeds)
     ]

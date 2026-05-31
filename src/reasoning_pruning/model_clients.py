@@ -98,7 +98,7 @@ class TransformersJsonDecisionModel:
     def find_first_removable_span(
         self, *, question: str, context: str, reasoning_units: list[str]
     ) -> PruningDecision:
-        prompt = _decision_prompt(
+        prompt = format_decision_prompt(
             question=question,
             context=context,
             reasoning_units=reasoning_units,
@@ -126,7 +126,7 @@ class GeminiReasoningGenerator:
             "Continue the reasoning with concise numbered steps. "
             "Do not summarize; write the next reasoning path only."
         )
-        text = _gemini_generate_text(
+        text = gemini_generate_text(
             model=self.source_model,
             prompt=prompt,
             generation_config=self.generation_config,
@@ -149,7 +149,7 @@ class GeminiJsonDecisionModel:
     def find_first_removable_span(
         self, *, question: str, context: str, reasoning_units: list[str]
     ) -> PruningDecision:
-        prompt = _decision_prompt(
+        prompt = format_decision_prompt(
             question=question,
             context=context,
             reasoning_units=reasoning_units,
@@ -158,7 +158,7 @@ class GeminiJsonDecisionModel:
         )
         generation_config = dict(self.decision_config)
         generation_config["responseMimeType"] = "application/json"
-        text = _gemini_generate_text(
+        text = gemini_generate_text(
             model=self.decision_model,
             prompt=prompt,
             generation_config=generation_config,
@@ -243,7 +243,7 @@ def create_decision_model_from_config(
     raise ValueError(f"unsupported decision provider: {provider}")
 
 
-def _gemini_generate_text(
+def gemini_generate_text(
     *,
     model: str,
     prompt: str,
@@ -260,11 +260,11 @@ def _gemini_generate_text(
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
         "generationConfig": _camelize_generation_config(generation_config),
     }
-    response = (transport or _gemini_rest_transport)(url, body)
+    response = (transport or gemini_rest_transport)(url, body)
     return _extract_gemini_text(response)
 
 
-def _gemini_rest_transport(url: str, body: dict[str, Any]) -> dict[str, Any]:
+def gemini_rest_transport(url: str, body: dict[str, Any]) -> dict[str, Any]:
     payload = json.dumps(body).encode("utf-8")
     req = request.Request(
         url,
@@ -314,14 +314,14 @@ def _camelize_generation_config(config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _load_prompt_template(prompt_version: str, prompts_dir: str = "prompts") -> str:
+def load_prompt_template(prompt_version: str, prompts_dir: str = "prompts") -> str:
     path = Path(prompts_dir) / f"{prompt_version}.txt"
     if not path.is_absolute():
         path = Path.cwd() / path
     return path.read_text()
 
 
-def _decision_prompt(
+def format_decision_prompt(
     *,
     question: str,
     context: str,
@@ -329,7 +329,7 @@ def _decision_prompt(
     prompt_version: str,
     prompts_dir: str = "prompts",
 ) -> str:
-    template = _load_prompt_template(prompt_version, prompts_dir)
+    template = load_prompt_template(prompt_version, prompts_dir)
     numbered_units = "\n".join(f"{index}: {unit}" for index, unit in enumerate(reasoning_units))
     return template.format(
         prompt_version=prompt_version,

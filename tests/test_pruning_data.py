@@ -23,22 +23,24 @@ def test_builds_transition_from_question_prefix_and_next_useful_step():
         reasoning_steps=steps,
         removable_index=1,
         depth=0,
-        source_model="google/gemma-4-E2B-it",
+        generator_model="google/gemma-4-E2B-it",
         round_id="smoke-r0",
-        original_trace="\n".join(steps),
     )
 
+    assert example["context_before_generation"] == "Question:\nIf x + 2 = 5, what is x?"
+    assert example["generated_trace"] == "\n".join(steps)
+    assert example["generated_units"] == steps
     assert example["input_x"] == (
-        "Question:\nIf x + 2 = 5, what is x?\n\n"
-        "Useful reasoning prefix:\nSubtract 2 from both sides."
+        "Question:\nIf x + 2 = 5, what is x?\n"
+        "Subtract 2 from both sides."
     )
     assert example["target_y"] == "The result is x = 3."
     assert example["question"] == "If x + 2 = 5, what is x?"
-    assert example["original_trace"] == "\n".join(steps)
     assert example["pruning_depth"] == 0
-    assert example["metadata"]["source_model"] == "google/gemma-4-E2B-it"
-    assert example["metadata"]["round_id"] == "smoke-r0"
-    assert example["metadata"]["removed_span"] == "This is a very common algebra pattern."
+    assert example["metadata"]["generator_model"] == "google/gemma-4-E2B-it"
+    assert example["metadata"]["removed_span"] == ["This is a very common algebra pattern."]
+    assert example["metadata"]["removed_start_index"] == 1
+    assert example["metadata"]["removed_end_index"] == 1
 
 
 def test_converts_canonical_transition_row_to_prompt_completion_for_training():
@@ -52,20 +54,19 @@ def test_converts_canonical_transition_row_to_prompt_completion_for_training():
         reasoning_steps=steps,
         removable_index=1,
         depth=0,
-        source_model="google/gemma-4-E2B-it",
+        generator_model="google/gemma-4-E2B-it",
         round_id="smoke-r0",
-        original_trace="\n".join(steps),
     )
 
     converted = transition_row_to_prompt_completion(example)
 
     assert converted["prompt"] == (
-        "Question:\nIf x + 2 = 5, what is x?\n\n"
-        "Useful reasoning prefix:\nSubtract 2 from both sides.\n\n"
+        "Question:\nIf x + 2 = 5, what is x?\n"
+        "Subtract 2 from both sides.\n\n"
         "Continue with the next useful reasoning step:"
     )
     assert converted["completion"] == "The result is x = 3."
-    assert converted["original_trace"] == "\n".join(steps)
+    assert converted["generated_trace"] == "\n".join(steps)
 
 
 def test_rejects_removal_without_following_useful_step():
@@ -75,9 +76,8 @@ def test_rejects_removal_without_following_useful_step():
             reasoning_steps=["Only step."],
             removable_index=0,
             depth=0,
-            source_model="google/gemma-4-E2B-it",
+            generator_model="google/gemma-4-E2B-it",
             round_id="smoke-r0",
-            original_trace="Only step.",
         )
     except ValueError as exc:
         assert "following useful step" in str(exc)

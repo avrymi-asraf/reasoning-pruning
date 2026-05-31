@@ -35,7 +35,6 @@ class FakeGenerator:
 
 class FakeDecisionModel:
     decision_model = "fake-decision"
-    decision_config = "conservative-v1"
 
     def __init__(self) -> None:
         self.calls = 0
@@ -58,13 +57,9 @@ def test_builds_iterative_pt_rows_from_generator_and_decision_model():
     decision_model = FakeDecisionModel()
     config = DatasetBuildConfig(
         round_id="round-001",
-        source_dataset="local/questions",
-        source_dataset_revision="abc123",
-        code_version="code-sha",
         max_pruning_depth=2,
         max_examples_per_question=2,
         unit_split_strategy="sentences",
-        pruning_config={"conservative": True},
     )
 
     rows = build_pt_dataset(
@@ -74,30 +69,41 @@ def test_builds_iterative_pt_rows_from_generator_and_decision_model():
         config=config,
     )
 
+    # context_before_generation for each depth
+    assert rows[0]["context_before_generation"] == "Question:\nWhat is 2 + 3?"
+    assert rows[1]["context_before_generation"] == "Question:\nWhat is 2 + 3?\nA.\nC."
+
+    # invariant: input_x_d + "\n" + target_y_d == context_before_generation_{d+1}
+    assert rows[0]["input_x"] + "\n" + rows[0]["target_y"] == rows[1]["context_before_generation"]
+
+    # generated traces and units
+    assert rows[0]["generated_trace"] == "A. B is unnecessary. C."
+    assert rows[1]["generated_trace"] == "E. F is unnecessary. G."
+    assert rows[0]["generated_units"] == ["A.", "B is unnecessary.", "C."]
+    assert rows[1]["generated_units"] == ["E.", "F is unnecessary.", "G."]
+
+    # input_x and target_y
     assert [row["input_x"] for row in rows] == [
-        "Question:\nWhat is 2 + 3?\n\nUseful reasoning prefix:\nA.",
-        "Question:\nWhat is 2 + 3?\n\nUseful reasoning prefix:\nA.\nC.\nE.",
+        "Question:\nWhat is 2 + 3?\nA.",
+        "Question:\nWhat is 2 + 3?\nA.\nC.\nE.",
     ]
     assert [row["target_y"] for row in rows] == ["C.", "G."]
     assert [row["pruning_depth"] for row in rows] == [0, 1]
+
+    # contexts passed to the generator match the invariant
     assert generator.contexts == [
         "Question:\nWhat is 2 + 3?",
-        "Question:\nWhat is 2 + 3?\n\nReasoning so far:\nA.\nC.",
+        "Question:\nWhat is 2 + 3?\nA.\nC.",
     ]
-    assert rows[0]["metadata"]["source_model"] == "fake-generator"
-    assert rows[0]["metadata"]["source_model_revision"] == "rev-a"
-    assert rows[0]["metadata"]["source_dataset"] == "local/questions"
-    assert rows[0]["metadata"]["source_dataset_revision"] == "abc123"
-    assert rows[0]["metadata"]["code_version"] == "code-sha"
+
+    # metadata exactly matches doc spec
+    assert rows[0]["metadata"]["generator_model"] == "fake-generator"
+    assert rows[0]["metadata"]["generator_model_revision"] == "rev-a"
     assert rows[0]["metadata"]["decision_model"] == "fake-decision"
-    assert rows[0]["metadata"]["decision_config"] == "conservative-v1"
-    assert rows[0]["metadata"]["removed_span"] == "B is unnecessary."
+    assert rows[0]["metadata"]["removed_span"] == ["B is unnecessary."]
     assert rows[0]["metadata"]["removed_start_index"] == 1
     assert rows[0]["metadata"]["removed_end_index"] == 1
-    assert rows[0]["metadata"]["generation_config"] == {"max_new_tokens": 64}
-    assert rows[0]["metadata"]["pruning_config"] == {"conservative": True}
-    assert rows[0]["original_trace"] == "A. B is unnecessary. C."
-    assert rows[1]["original_trace"] == "E. F is unnecessary. G."
+    assert rows[0]["metadata"]["decision_reason"] == "Middle unit is redundant."
 
 
 def test_stops_when_decision_has_no_safe_removal():

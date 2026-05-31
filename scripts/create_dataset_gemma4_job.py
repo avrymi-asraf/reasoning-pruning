@@ -215,52 +215,36 @@ def _stable_id(question: str, depth: int, start: int, end: int) -> str:
 def _build_pt_row(
     *,
     question: str,
-    all_units: list[str],
+    context_before_generation: str,
+    generated_trace: str,
+    generated_units: list[str],
     removed_start: int,
     removed_end: int,
     depth: int,
     decision_reason: str,
-    question_index: int,
-    original_trace: str,
 ) -> dict[str, Any]:
-    next_index = removed_end + 1
-    prefix_units = all_units[:removed_start]
-    removed_units = all_units[removed_start: removed_end + 1]
-    target_y = all_units[next_index]
-    prefix = "\n".join(prefix_units) if prefix_units else "(empty)"
-    input_x = f"Question:\n{question}\n\nUseful reasoning prefix:\n{prefix}"
+    useful_prefix = generated_units[:removed_start]
+    if useful_prefix:
+        input_x = context_before_generation + "\n" + "\n".join(useful_prefix)
+    else:
+        input_x = context_before_generation
     return {
         "id": _stable_id(question, depth, removed_start, removed_end),
         "question": question,
-        "original_trace": original_trace,
+        "context_before_generation": context_before_generation,
+        "generated_trace": generated_trace,
+        "generated_units": generated_units,
         "input_x": input_x,
-        "target_y": target_y,
+        "target_y": generated_units[removed_end + 1],
         "pruning_depth": depth,
         "metadata": {
-            "source_model": GENERATOR_MODEL,
-            "source_model_revision": None,
-            "round_id": ROUND_ID,
-            "source_dataset": SOURCE_DATASET,
-            "source_dataset_revision": "main",
+            "generator_model": GENERATOR_MODEL,
+            "generator_model_revision": None,
             "decision_model": DECISION_MODEL,
-            "decision_config": {
-                "conservative": True,
-                "require_following_step": True,
-                "max_output_tokens": 256,
-                "temperature": 0.0,
-                "prompt_version": PROMPT_VERSION,
-            },
-            "removed_span": "\n".join(removed_units),
+            "removed_span": generated_units[removed_start : removed_end + 1],
             "removed_start_index": removed_start,
             "removed_end_index": removed_end,
-            "generation_config": {
-                "max_new_tokens": MAX_NEW_TOKENS,
-                "temperature": GENERATION_TEMPERATURE,
-                "do_sample": True,
-            },
-            "code_version": "hf-job",
             "decision_reason": decision_reason,
-            "source_question_index": question_index,
         },
     }
 
@@ -275,10 +259,9 @@ def _row_to_prompt_completion(row: dict[str, Any]) -> dict[str, Any]:
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
 def _format_context(question: str, accepted_units: list[str]) -> str:
-    base = f"Question:\n{question}"
     if not accepted_units:
-        return base
-    return f"{base}\n\nReasoning so far:\n" + "\n".join(accepted_units)
+        return f"Question:\n{question}"
+    return f"Question:\n{question}\n" + "\n".join(accepted_units)
 
 
 def build_pt_dataset(*, questions: list[str], tokenizer, model) -> list[dict[str, Any]]:
@@ -304,21 +287,18 @@ def build_pt_dataset(*, questions: list[str], tokenizer, model) -> list[dict[str
                 break
             if start < 0 or end < start or end + 1 >= len(units):
                 break
-            abs_start = len(accepted) + start
-            abs_end = len(accepted) + end
-            all_units = accepted + units
             row = _build_pt_row(
                 question=question,
-                all_units=all_units,
-                removed_start=abs_start,
-                removed_end=abs_end,
+                context_before_generation=context,
+                generated_trace=trace,
+                generated_units=units,
+                removed_start=start,
+                removed_end=end,
                 depth=depth,
                 decision_reason=str(decision.get("reason", "")),
-                question_index=q_idx,
-                original_trace=trace,
             )
             rows.append(row)
-            print(f"  depth={depth} removed='{all_units[abs_start:abs_end+1]}' target='{row['target_y'][:60]}'")
+            print(f"  depth={depth} removed='{units[start:end+1]}' target='{row['target_y'][:60]}'")
             accepted.extend(units[:start])
             accepted.append(units[end + 1])
     print(f"Built {len(rows)} PT rows from {len(questions)} questions.")

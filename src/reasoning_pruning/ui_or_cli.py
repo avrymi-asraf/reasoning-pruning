@@ -126,13 +126,9 @@ def _build_rows_from_config(config) -> list[dict]:
         decision_model=decision_model,
         config=DatasetBuildConfig(
             round_id=config.round_id,
-            source_dataset=config.source_dataset,
-            source_dataset_revision=config.source_dataset_revision,
-            code_version=config.code_version,
             max_pruning_depth=config.max_pruning_depth,
             max_examples_per_question=config.max_examples_per_question,
             unit_split_strategy=config.unit_split_strategy,
-            pruning_config=config.pruning,
         ),
     )
 
