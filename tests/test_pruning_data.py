@@ -65,6 +65,7 @@ def test_converts_canonical_transition_row_to_prompt_completion_for_training():
         "Continue with the next useful reasoning step:"
     )
     assert converted["completion"] == "The result is x = 3."
+    assert converted["original_trace"] == "\n".join(steps)
 
 
 def test_rejects_removal_without_following_useful_step():

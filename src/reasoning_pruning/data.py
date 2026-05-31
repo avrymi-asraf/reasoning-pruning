@@ -85,18 +85,15 @@ def build_pruning_transition_row(
     if next_index >= len(reasoning_units):
         raise ValueError("removed span must have a following useful step")
 
-    prefix_steps = reasoning_units[:removed_start_index]
-    removed_units = reasoning_units[removed_start_index : removed_end_index + 1]
-    next_useful_step = reasoning_units[next_index]
-    prefix = "\n".join(prefix_steps) if prefix_steps else "(empty)"
+    prefix = "\n".join(reasoning_units[:removed_start_index]) if removed_start_index > 0 else "(empty)"
     input_x = f"Question:\n{question}\n\nUseful reasoning prefix:\n{prefix}"
 
-    row = {
+    return {
         "id": _stable_row_id(round_id, question, depth, removed_start_index, removed_end_index),
         "question": question,
         "original_trace": original_trace,
         "input_x": input_x,
-        "target_y": next_useful_step,
+        "target_y": reasoning_units[next_index],
         "pruning_depth": depth,
         "metadata": {
             "source_model": source_model,
@@ -106,17 +103,15 @@ def build_pruning_transition_row(
             "source_dataset_revision": source_dataset_revision,
             "decision_model": decision_model,
             "decision_config": decision_config,
-            "removed_span": "\n".join(removed_units),
+            "removed_span": "\n".join(reasoning_units[removed_start_index : removed_end_index + 1]),
             "removed_start_index": removed_start_index,
             "removed_end_index": removed_end_index,
             "generation_config": generation_config,
             "pruning_config": pruning_config,
             "code_version": code_version,
+            "decision_reason": decision_reason,
         },
     }
-    if decision_reason is not None:
-        row["metadata"]["decision_reason"] = decision_reason
-    return row
 
 
 def transition_row_to_prompt_completion(row: dict[str, Any]) -> dict[str, Any]:
