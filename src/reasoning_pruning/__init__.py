@@ -1,24 +1,16 @@
 """Reasoning-pruning transition training utilities.
 
-This package groups the local helpers that support the project architecture:
-dataset-builder config, training config, reasoning-unit splitting, pruning
-decisions, automatic PT dataset construction, and training-format conversion.
-The package is used by uv-driven local tests and should remain aligned with the
-Hugging Face Jobs dataset/training flows documented in AGENTS.md.
+The package now keeps data creation small: `data_creation` owns the PT dataset
+algorithm, `clients` owns model providers, and `cli` owns local command-line
+wiring. Training configuration and model lineage helpers remain separate because
+they are downstream of dataset creation. The package is used by uv-driven local
+checks and Hugging Face Jobs.
 """
 
 __all__ = [
-    "config",
-    "data",
-    "dataset_builder_config",
-    "hf_dataset_publisher",
+    "cli",
+    "clients",
+    "data_creation",
     "model_registry",
-    "model_clients",
-    "pruning_decision",
-    "pt_dataset_builder",
-    "question_source",
-    "reasoning_units",
-    "trace_generation",
     "training_config",
-    "ui_or_cli",
 ]

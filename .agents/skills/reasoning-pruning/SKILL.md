@@ -24,6 +24,15 @@ In code, preserve the semantic fields:
 - `pruning_depth`: the iteration depth for that original question.
 - `metadata`: `generator_model`, `generator_model_revision`, `decision_model`, `removed_span` (list), `removed_start_index`, `removed_end_index`, `decision_reason`.
 
+
+Data creation non-negotiables:
+
+- D is only a judge; D never writes, rewrites, paraphrases, or repairs `target_y`.
+- `target_y` is always copied exactly from `generated_units[removed_end_index + 1]`.
+- Emit no row unless the following unit exists and is actual computation, a derived fact, or a logical deduction.
+- The next depth context must equal `row["input_x"] + "\n" + row["target_y"]`.
+- Keep the full worked example in `AGENTS.md` and `docs/data_creation.md`; it is required project guidance, not optional prose.
+
 The automatic loop is:
 
 1. Load source questions from config. Supported sources are local smoke/test
@@ -36,24 +45,22 @@ The automatic loop is:
 6. Update the pruned context by keeping useful prefix plus the next useful step.
 7. Repeat until no safe skip, invalid next step, max depth, max examples, or generation failure.
 
-Important modules:
+Keep the detailed walkthrough in `AGENTS.md` and `docs/data_creation.md` in sync with this loop. It is intentionally verbose because future agents need the examples and invariants to avoid corrupting data creation.
 
-- `dataset_builder_config.py`: loads only dataset-builder YAML from `configs/data/`
-  (e.g. `configs/data/dataset_builder_gsm8k_100_gemma4.yaml`).
+Important modules after the data-creation simplification:
+
+- `data_creation.py`: the whole automatic data-creation core. It loads dataset-builder YAML, reads local/HF questions, defines `GeneratedTrace` and `PruningDecision`, splits reasoning units, builds canonical rows, advances context, converts rows to prompt/completion, and publishes canonical/training configs to the Hub.
+- `clients.py`: model boundaries for G and D. It supports Transformers and Gemini generators plus Transformers/Gemini JSON decision models, prompt loading, Gemini REST transport, and JSON decision parsing.
+- `cli.py`: local CLI wiring for `build-dataset` and `inspect-dataset`; it loads `.env`, builds clients from config, calls `data_creation.build_pt_dataset`, and optionally publishes.
 - `training_config.py`: loads only training YAML from `configs/train/`
   (e.g. `configs/train/training_gemma4_gsm8k_100.yaml`).
-- `question_source.py`: loads local test questions or HF Dataset source
-  questions before generation starts.
-- `reasoning_units.py`: simple configurable splitting.
-- `pruning_decision.py`: decision result contract.
-- `trace_generation.py` and `model_clients.py`: generator and decision model boundaries.
-  `model_clients.py` supports Transformers providers and Gemini REST providers;
-  use `gemini-json` with `gemini-3.1-flash-lite` for the current D model.
-- `data.py`: row builder and prompt/completion conversion for training.
-- `pt_dataset_builder.py`: the iterative automatic data-generation engine.
-- `hf_dataset_publisher.py`: pushes canonical/training splits as a Hugging Face Dataset.
-- `ui_or_cli.py`: exposes workflow commands.
 - `model_registry.py`: builds accepted-checkpoint lineage/model-card records.
+
+The old many-file data creation split (`dataset_builder_config.py`, `question_source.py`,
+`trace_generation.py`, `reasoning_units.py`, `pruning_decision.py`, `data.py`,
+`pt_dataset_builder.py`, `hf_dataset_publisher.py`, `model_clients.py`, and
+`ui_or_cli.py`) was intentionally collapsed. Do not recreate those layers unless the
+project grows enough to make the extra indirection worth it.
 
 For `google/gemma-4-E2B-it` training on Hugging Face Jobs:
 
@@ -108,13 +115,11 @@ Prompts folder:
 
 Decision-model prompt templates live in `prompts/` as `.txt` files named by
 `prompt_version` (e.g. `prompts/conservative-skip-v1.txt`). The local package
-(`model_clients.py`) loads from this directory via `load_prompt_template(version,
-prompts_dir)`. The self-contained HF Jobs script (`create_dataset_gemma4_job.py`)
-embeds the prompt as an inline constant (`_PROMPT_TEMPLATE`) — it does NOT download
-from any Hub dataset. To create a new prompt version for local use: add
-`prompts/<new-version>.txt` and reference it in the dataset-builder config's
-`decision.prompt_version` field. Update the inline constant in the HF Jobs script
-separately.
+(`clients.py`) loads from this directory via `load_prompt_template(version,
+prompts_dir)`. The HF Jobs script (`create_dataset_gemma4_job.py`) now uses the
+shared package code instead of embedding a separate prompt constant. To create a
+new prompt version: add `prompts/<new-version>.txt` and reference it in the
+dataset-builder config's `decision.prompt_version` field.
 
 Config folder split:
 
