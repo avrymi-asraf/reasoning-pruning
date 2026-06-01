@@ -1,11 +1,12 @@
-"""Replay D (decision model) on cached G traces with any prompt file.
+"""Replay D on cached G traces with any prompt file.
 
-This script is the D-prompt playground. Load a JSONL trace file produced by
-generate_traces.py, point it at any .txt prompt, and see exactly what D decides
-for each trace — without re-running G. Swap prompts/conservative-skip-v1.txt
-for a copy with edits and re-run this script to compare behavior. Runs locally;
-requires GEMINI_API_KEY in .env.
+This script is the second half of the local prompt playground. It reads JSONL
+traces from `generate_traces.py`, formats a candidate decision prompt, and calls
+Gemini D to inspect safe-skip decisions without regenerating traces. It runs
+locally through uv and requires `GEMINI_API_KEY` in the environment or `.env`.
 """
+
+from __future__ import annotations
 
 import argparse
 import json
@@ -14,11 +15,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from reasoning_pruning.model_clients import (
-    gemini_generate_text,
-    parse_json_pruning_decision,
-)
-from reasoning_pruning.ui_or_cli import load_env_file
+from reasoning_pruning.cli import load_env_file
+from reasoning_pruning.clients import gemini_generate_text, parse_json_pruning_decision
 
 DIVIDER = "─" * 60
 
@@ -49,37 +47,31 @@ def main() -> None:
 
     prompt_version = Path(args.prompt).stem
     template = Path(args.prompt).read_text()
-
-    total = len(traces)
-    print(f"Loaded {total} traces. Running D with: {args.prompt}")
+    print(f"Loaded {len(traces)} traces. Running D with: {args.prompt}")
     print(DIVIDER)
 
     removal_count = 0
-
     for i, trace in enumerate(traces, 1):
-        question = trace["question"]
         units = trace["units"]
-
-        print(f"[{i}/{total}] Q: {question[:100]}")
+        print(f"[{i}/{len(traces)}] Q: {trace['question'][:100]}")
         print("Units:")
         for idx, unit in enumerate(units):
             print(f"  {idx}: {unit}")
 
-        prompt = _format_prompt(template, prompt_version, trace)
         raw = gemini_generate_text(
             model=args.model,
-            prompt=prompt,
+            prompt=_format_prompt(template, prompt_version, trace),
             generation_config={"responseMimeType": "application/json", "temperature": 0.0},
             api_key_env="GEMINI_API_KEY",
             transport=None,
         )
         decision = parse_json_pruning_decision(raw)
 
-        if decision.has_removal:
+        if decision.has_removal and decision.removed_start_index is not None and decision.removed_end_index is not None:
             removal_count += 1
-            removed_text = " | ".join(units[decision.removed_start_index : decision.removed_end_index + 1])
+            removed = " | ".join(units[decision.removed_start_index : decision.removed_end_index + 1])
             print(f"Decision: has_removal=True  span={decision.removed_start_index}-{decision.removed_end_index}")
-            print(f'  Removed: "{removed_text}"')
+            print(f'  Removed: "{removed}"')
         else:
             print("Decision: has_removal=False")
 
@@ -87,7 +79,7 @@ def main() -> None:
         print(f"  Can continue: {decision.can_continue_after_skip}")
         print(DIVIDER)
 
-    print(f"Summary: {removal_count}/{total} had removals")
+    print(f"Summary: {removal_count}/{len(traces)} had removals")
 
 
 if __name__ == "__main__":
