@@ -249,10 +249,14 @@ emitted — only depth-0 rows since the cached dataset has one raw trace per que
 `notebooks/data_creation_playground.ipynb` — runs the complete multi-depth pipeline
 on Colab GPU. G = Gemma-4 (local on Colab), D = Gemini Flash Lite (cloud).
 
+**Gemma 4 requires transformers from git main** — not in any stable PyPI release.
+The setup cell installs `git+https://github.com/huggingface/transformers.git`. Do not
+change this to a PyPI pin; it will break with `KeyError: 'gemma4'`.
+
 Setup: enable GPU runtime (T4 or A100), add `HF_TOKEN` and `GEMINI_API_KEY` to Colab
 secrets, then run cells top-to-bottom. The notebook:
 
-1. Clones the repo and installs deps
+1. Clones the repo and installs deps (transformers from git, ~2 min)
 2. Initializes G from `avreymi/gemma-4-E2B-it-reasoning-pruning` (~5GB download, ~1-2 min)
 3. Loads the GSM8K dataset-builder config, then overrides `max_pruning_depth` with
    `dataclasses.replace(config, max_pruning_depth=4)` for quick runs
@@ -262,6 +266,11 @@ secrets, then run cells top-to-bottom. The notebook:
 `build_rows_for_question` is the right entry point for the playground — it is the
 same function `build_pt_dataset` calls internally, now exposed as a public API.
 Change the `prompt_version` in the D init cell to test new prompts; no other changes needed.
+
+**Notebook alignment:** the notebook calls production library functions directly with no
+wrappers. When public signatures in `data_creation.py` or `clients.py` change, or when
+the active G model advances to a new checkpoint, update the notebook to match. See the
+full alignment rule in `AGENTS.md`.
 
 The local `.env` format may use `export KEY=value`; the CLI loader supports it
 and should never print secret values. `GEMINI_API_KEY` is valid as of 2026-05-28.

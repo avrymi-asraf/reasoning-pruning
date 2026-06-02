@@ -17,8 +17,20 @@ Data creation was intentionally collapsed into a small set of files:
 | `configs/data/*.yaml` | Dataset-builder configs. |
 | `prompts/*.txt` | Decision-model prompt templates. |
 | `src/reasoning_pruning/training_config.py` and `scripts/train_pt_dataset_job.py` | Training config and HF Jobs training entry point. |
+| `notebooks/data_creation_playground.ipynb` | Google Colab notebook for the full multi-depth data-creation playground. Calls `build_rows_for_question` and `build_pt_dataset` directly — no wrapper functions. Must stay in sync with the library API. |
 
 Do not recreate the previous many-file data-creation split unless the project grows enough to justify the indirection.
+
+## Notebook Alignment Rule
+
+`notebooks/data_creation_playground.ipynb` calls the production library functions directly. When any of the following change, update the notebook to match:
+
+- Public signatures in `data_creation.py` (`build_rows_for_question`, `build_pt_dataset`, `load_data_creation_config`, `DataCreationConfig` fields)
+- Client constructors in `clients.py` (`TransformersGenerator`, `GeminiDecisionModel`)
+- The active generator model (when G advances to a new checkpoint)
+- The active decision prompt version
+
+The notebook is not a separate codebase — it is a live entry point into the same library. Treat it the same way you would treat the CLI or the HF Jobs script: if the API changes, the notebook breaks, and a broken notebook is a bug.
 
 ## Data Creation Contract — Do Not Weaken This
 
