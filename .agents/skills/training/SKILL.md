@@ -88,6 +88,33 @@ api.run_uv_job(
 - `gradient_accumulation_steps=4` with batch_size=1 gives effective batch 4 — important
   for stable LoRA training when the dataset is small (~30–100 rows).
 
+## Job monitoring
+
+**Check current logs (non-blocking snapshot):**
+```bash
+source .env && .venv/bin/hf jobs logs <job-id>
+source .env && .venv/bin/hf jobs logs --tail 50 <job-id>   # last 50 lines
+```
+
+**Stream live logs until job ends (blocking):**
+```bash
+source .env && .venv/bin/hf jobs logs -f <job-id>
+```
+In Claude Code's Bash tool, use `run_in_background: true` with `-f` and read the output file for progress, OR poll with `--tail` without `-f`.
+
+**Check job status and metadata:**
+```bash
+source .env && .venv/bin/hf jobs inspect <job-id>
+source .env && .venv/bin/hf jobs ps          # list recent jobs
+```
+
+**Cancel a running job:**
+```bash
+source .env && .venv/bin/hf jobs cancel <job-id>
+```
+
+**Monitor URL:** `https://huggingface.co/jobs/avreymi/<job-id>`
+
 ## Completed runs
 
 - Smoke run: `avreymi/gemma-4-E2B-it-reasoning-pruning-smoke`, HF job `6a187ee53a4b8cae6044d45f`,

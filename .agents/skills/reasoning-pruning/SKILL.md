@@ -193,6 +193,19 @@ Current dataset-builder configs (in `configs/data/`) — all use `avreymi/gemma-
 - `dataset_builder_aqua_rat_25_gemma4.yaml`: 25 algebra word problems from `deepmind/aqua_rat`. Target: `avreymi/reasoning-pruning-pt-aqua-rat-25-gemma4-r2`.
 - `dataset_builder_bbh_logical_25_gemma4.yaml`: 25 logical-deduction puzzles from `lukaemon/bbh` (subset `logical_deduction_seven_objects`). Target: `avreymi/reasoning-pruning-pt-bbh-logical-25-gemma4-r2`.
 
+Round 2 data creation jobs (submitted 2026-06-02, all running):
+- GSM8K 100: job `6a1f2fdfb2914899801366df` → `avreymi/reasoning-pruning-pt-gsm8k-100-gemma4-r2`
+- MATH-Hard 25: job `6a1f2fea4e2701e4a03f603c` → `avreymi/reasoning-pruning-pt-math-25-gemma4-r2`
+- AQUA-RAT 25: job `6a1f2fedb2914899801366e1` → `avreymi/reasoning-pruning-pt-aqua-rat-25-gemma4-r2`
+- BBH logical 25: job `6a1f2fef4e2701e4a03f603e` → `avreymi/reasoning-pruning-pt-bbh-logical-25-gemma4-r2`
+
+HF Jobs job script fix (2026-06-02): `create_dataset_gemma4_job.py` now installs the package via
+`git+https://github.com/avrymi-asraf/reasoning-pruning.git` in PEP 723 deps, embeds the
+conservative-skip-v1 prompt (prompts/ dir not available on HF Jobs), defaults to GSM8K r2 config,
+and supports all source fields as env vars. Pass `SOURCE_DATASET`, `SOURCE_SUBSET`, `SOURCE_SPLIT`,
+`SOURCE_QUESTION_FIELD`, `SOURCE_LIMIT`, `HUB_DATASET_ID`, `ROUND_ID`, `MAX_NEW_TOKENS` to run
+any of the 4 datasets without needing the YAML on the server.
+
 Current training configs (in `configs/train/`):
 
 - `training_gemma4_gsm8k_100.yaml`: trains on `avreymi/reasoning-pruning-pt-gsm8k-100-gemma4-r1`,
