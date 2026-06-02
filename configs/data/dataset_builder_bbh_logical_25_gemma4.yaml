@@ -1,14 +1,14 @@
-round_id: gsm8k-gemma4-100-r2
+round_id: bbh-logical-gemma4-25-r2
 source_type: hf_dataset
-source_dataset: openai/gsm8k
+source_dataset: lukaemon/bbh
 source_dataset_revision: main
 source_questions_path: null
-source_subset: main
-source_split: train
-source_question_field: question
-source_limit: 100
+source_subset: logical_deduction_seven_objects
+source_split: test
+source_question_field: input
+source_limit: 25
 code_version: local-dev
-hub_dataset_id: avreymi/reasoning-pruning-pt-gsm8k-100-gemma4-r2
+hub_dataset_id: avreymi/reasoning-pruning-pt-bbh-logical-25-gemma4-r2
 private: true
 
 generator:
@@ -22,7 +22,7 @@ decision:
   prompt_version: conservative-skip-v1
 
 generation:
-  max_new_tokens: 512
+  max_new_tokens: 1024
   temperature: 0.7
   do_sample: true
 

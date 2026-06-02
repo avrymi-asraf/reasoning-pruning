@@ -149,7 +149,7 @@ Do not create a row when:
 - D suggests replacement text instead of indices into G's units;
 - the row target comes from D, a human, or post-processing rather than from G;
 - `input_x + "\n" + target_y` would not equal the next context used for depth `d + 1`;
-- G is a different model family than the model being trained for self-distillation.
+- G is the base model (`google/gemma-4-E2B-it`) when the fine-tuned model (`avreymi/gemma-4-E2B-it-reasoning-pruning`) is available — after round 1, G must always be the fine-tuned model.
 
 ## Data Creation Workflow
 
@@ -193,9 +193,13 @@ scripts/reasoning_pruning_cli.py build-dataset / inspect-dataset
 
 Publishing is part of `data_creation.py` too: `push_pt_dataset_to_hub(...)` turns rows into a `canonical` config and a `training` config in the same HF dataset repo.
 
-### The core idea
+### The core idea — G is always the current fine-tuned model
 
-G is the same base model family we want to train. G generates its own reasoning trace from the current context. D does **not** write replacement reasoning; D only marks the first span that is genuinely redundant and safe to skip. The dataset row then teaches G: given the question and the useful prefix, jump directly to the next useful reasoning step that G already wrote.
+G must be the most recently trained fine-tuned model from this repo, never the base model after round 1. Self-distillation is iterative:
+- Round 1: G = `google/gemma-4-E2B-it` (base) → trained → `avreymi/gemma-4-E2B-it-reasoning-pruning`
+- Round 2+: G = `avreymi/gemma-4-E2B-it-reasoning-pruning` → trained → next checkpoint
+
+G generates its own reasoning trace from the current context. D does **not** write replacement reasoning; D only marks the first span that is genuinely redundant and safe to skip. The dataset row then teaches G: given the question and the useful prefix, jump directly to the next useful reasoning step that G already wrote.
 
 The training example shape is always:
 
@@ -203,7 +207,7 @@ The training example shape is always:
 question + useful reasoning prefix -> next useful reasoning step
 ```
 
-This is self-distillation. If G is not the model being trained, the data no longer teaches the target model to skip its own bad habits.
+Using the base model as G in round 2+ generates traces shaped by the base model's habits. Training those rows into the fine-tuned model teaches it to skip patterns it never produces — the data would be misaligned. G must always be the same model that will be trained on the resulting rows.
 
 ### One question, one depth, step by step
 
@@ -211,7 +215,7 @@ This is self-distillation. If G is not the model being trained, the data no long
 
 `src/reasoning_pruning/data_creation.py` reads a YAML file such as `configs/data/dataset_builder_gsm8k_100_gemma4.yaml`. The config says:
 
-- which generator G to use, e.g. `google/gemma-4-E2B-it`;
+- which generator G to use — always the current fine-tuned model, e.g. `avreymi/gemma-4-E2B-it-reasoning-pruning`;
 - which decision model D to use, e.g. `gemini-3.1-flash-lite`;
 - where questions come from, either a local file or an HF Dataset;
 - how many depths/examples to create;
