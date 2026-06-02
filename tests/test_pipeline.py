@@ -120,8 +120,8 @@ def test_split_reasoning_units_numbered_and_sentence_fallback():
 
 def test_data_creation_config_loads_current_yaml():
     config = load_data_creation_config(Path("configs/data/dataset_builder_gsm8k_100_gemma4.yaml"))
-    assert config.round_id == "gsm8k-gemma4-100-r1"
-    assert config.generator["model_id"] == "google/gemma-4-E2B-it"
+    assert config.round_id == "gsm8k-gemma4-100-r2"
+    assert config.generator["model_id"] == "avreymi/gemma-4-E2B-it-reasoning-pruning"
 
 
 @pytest.mark.skipif(

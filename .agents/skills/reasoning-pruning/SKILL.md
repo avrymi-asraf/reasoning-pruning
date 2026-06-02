@@ -244,5 +244,24 @@ aqua_rat, bbh, or all — defaults to all). Requires `HF_TOKEN` + `GEMINI_API_KE
 Output shows the decision AND the actual PT row (input_x, target_y) that would be
 emitted — only depth-0 rows since the cached dataset has one raw trace per question.
 
+## Full multi-depth playground (Google Colab)
+
+`notebooks/data_creation_playground.ipynb` — runs the complete multi-depth pipeline
+on Colab GPU. G = Gemma-4 (local on Colab), D = Gemini Flash Lite (cloud).
+
+Setup: enable GPU runtime (T4 or A100), add `HF_TOKEN` and `GEMINI_API_KEY` to Colab
+secrets, then run cells top-to-bottom. The notebook:
+
+1. Clones the repo and installs deps
+2. Initializes G from `avreymi/gemma-4-E2B-it-reasoning-pruning` (~5GB download, ~1-2 min)
+3. Loads the GSM8K dataset-builder config, then overrides `max_pruning_depth` with
+   `dataclasses.replace(config, max_pruning_depth=4)` for quick runs
+4. Calls `build_rows_for_question` (single question, full depth loop, verbose output)
+   or `build_pt_dataset` (multiple questions, summary)
+
+`build_rows_for_question` is the right entry point for the playground — it is the
+same function `build_pt_dataset` calls internally, now exposed as a public API.
+Change the `prompt_version` in the D init cell to test new prompts; no other changes needed.
+
 The local `.env` format may use `export KEY=value`; the CLI loader supports it
 and should never print secret values. `GEMINI_API_KEY` is valid as of 2026-05-28.

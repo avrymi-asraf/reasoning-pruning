@@ -181,7 +181,7 @@ def build_pt_dataset(
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for question in questions:
-        rows.extend(_build_rows_for_question(question, generator, decision_model, config))
+        rows.extend(build_rows_for_question(question=question, generator=generator, decision_model=decision_model, config=config))
     return rows
 
 
@@ -286,7 +286,8 @@ def push_pt_dataset_to_hub(
     return hub_dataset_id
 
 
-def _build_rows_for_question(
+def build_rows_for_question(
+    *,
     question: str,
     generator: ReasoningGenerator,
     decision_model: PruningDecisionModel,
