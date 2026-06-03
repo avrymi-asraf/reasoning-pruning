@@ -18,6 +18,7 @@ from reasoning_pruning.data_creation import (
     PruningDecision,
     build_pt_dataset,
     format_context,
+    format_spectrum_question,
     load_data_creation_config,
     split_reasoning_units,
     transition_row_to_prompt_completion,
@@ -118,9 +119,35 @@ def test_split_reasoning_units_numbered_and_sentence_fallback():
     assert split_reasoning_units("Add 2 + 3. The sum is 5.") == ["Add 2 + 3.", "The sum is 5."]
 
 
+def test_spectrum_question_includes_context_and_choices_but_never_the_answer():
+    row = {
+        "input_mode": "question_with_context_and_choices",
+        "question": "What regulates body processes?",
+        "context": "The hypothalamus produces hormones that regulate body processes.",
+        "choices": [{"label": "A", "text": "pancreas"}, {"label": "B", "text": "hypothalamus"}],
+        "gold_answer": "hypothalamus",
+        "gold_answer_label": "B",
+        "reference_solution": "It is the hypothalamus because ...",
+        "supporting_facts": "hypothalamus -> hormones",
+    }
+    text = format_spectrum_question(row)
+    assert "The hypothalamus produces hormones" in text
+    assert "(A) pancreas" in text and "(B) hypothalamus" in text
+    assert "Options:" in text
+    assert row["reference_solution"] not in text
+    assert row["supporting_facts"] not in text
+
+
+def test_spectrum_question_question_only_has_no_options_or_context():
+    text = format_spectrum_question({"input_mode": "question_only", "question": "What is 2 + 2?"})
+    assert text == "What is 2 + 2?"
+
+
 def test_data_creation_config_loads_current_yaml():
-    config = load_data_creation_config(Path("configs/data/dataset_builder_gsm8k_100_gemma4.yaml"))
-    assert config.round_id == "gsm8k-gemma4-100-r2"
+    config = load_data_creation_config(Path("configs/data/dataset_builder_spectrum_gemma4.yaml"))
+    assert config.round_id == "spectrum-gemma4-r2"
+    assert config.source_dataset == "avreymi/reasoning-spectrum-qa"
+    assert config.source_split == "data"
     assert config.generator["model_id"] == "avreymi/gemma-4-E2B-it-reasoning-pruning"
 
 

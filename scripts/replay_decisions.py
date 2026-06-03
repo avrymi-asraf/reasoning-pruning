@@ -1,7 +1,7 @@
 """Replay D on reasoning traces with any prompt file.
 
 The second half of the local prompt playground. Loads traces from a local JSONL
-file (generate_traces.py output) or directly from `avreymi/reasoning-traces-gemma4-100`
+file (generate_traces.py output) or directly from `avreymi/reasoning-traces-spectrum-gemma4`
 on the Hub. Calls Gemini D, then prints the decision and the actual PT row that
 would be emitted (input_x → target_y). Swap prompt files and re-run to compare
 versions without regenerating traces. Runs locally via uv and requires
@@ -21,18 +21,29 @@ from reasoning_pruning.cli import load_env_file
 from reasoning_pruning.clients import gemini_generate_text, parse_json_pruning_decision
 
 DIVIDER = "─" * 60
-HUB_REPO = "avreymi/reasoning-traces-gemma4-100"
+HUB_REPO = "avreymi/reasoning-traces-spectrum-gemma4"
 
 
-def load_traces_from_hub(config: str, limit: int | None) -> list[dict]:
+def load_traces_from_hub(repo: str, limit: int | None) -> list[dict]:
     import os
     from datasets import load_dataset
 
     token = os.environ.get("HF_TOKEN")
-    ds = load_dataset(HUB_REPO, name=config, split="train", token=token)
+    # The spectrum traces repo uses a single split; the legacy repo needs config "all".
+    try:
+        ds = load_dataset(repo, split="train", token=token)
+    except ValueError:
+        ds = load_dataset(repo, name="all", split="train", token=token)
     if limit:
         ds = ds.select(range(min(limit, len(ds))))
-    return [{"question": r["question"], "units": r["units"], "source": r.get("source_dataset", config)} for r in ds]
+    return [
+        {
+            "question": r["question"],
+            "units": r["units"],
+            "source": r.get("reasoning_family") or r.get("source_dataset", ""),
+        }
+        for r in ds
+    ]
 
 
 def _format_prompt(template: str, prompt_version: str, trace: dict) -> str:
@@ -74,8 +85,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run D on traces and preview PT rows.")
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--traces", help="Local JSONL file from generate_traces.py.")
-    source.add_argument("--hub", nargs="?", const="all", metavar="CONFIG",
-                        help="Load from HF Hub. Optionally specify config name (default: all).")
+    source.add_argument("--hub", nargs="?", const=HUB_REPO, metavar="REPO",
+                        help=f"Load traces from a Hub repo (default: {HUB_REPO}). "
+                             "Pass avreymi/reasoning-traces-gemma4-100 to reuse the legacy cache.")
     parser.add_argument("--prompt", required=True, help="Path to a .txt decision prompt template.")
     parser.add_argument("--limit", type=int, default=None, help="Max traces to evaluate.")
     parser.add_argument("--model", default="gemini-2.0-flash-lite", help="Gemini model for D.")
@@ -84,9 +96,8 @@ def main() -> None:
     load_env_file(Path(".env"))
 
     if args.hub is not None:
-        config = args.hub
-        print(f"Loading traces from Hub: {HUB_REPO} (config={config})")
-        traces = load_traces_from_hub(config, args.limit)
+        print(f"Loading traces from Hub: {args.hub}")
+        traces = load_traces_from_hub(args.hub, args.limit)
     else:
         traces = [json.loads(line) for line in Path(args.traces).read_text().splitlines() if line.strip()]
         if args.limit:

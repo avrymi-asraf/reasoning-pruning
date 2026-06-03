@@ -240,7 +240,7 @@ This is self-distillation. If G is not the model being trained, the data no long
 
 #### 1. Load config and questions
 
-`src/reasoning_pruning/data_creation.py` reads a YAML file such as `configs/data/dataset_builder_gsm8k_100_gemma4.yaml`. The config says:
+`src/reasoning_pruning/data_creation.py` reads a YAML file such as `configs/data/dataset_builder_spectrum_gemma4.yaml`. The config says:
 
 - which generator G to use — always the current fine-tuned model, e.g. `avreymi/gemma-4-E2B-it-reasoning-pruning`;
 - which decision model D to use, e.g. `gemini-3.1-flash-lite`;
@@ -248,7 +248,7 @@ This is self-distillation. If G is not the model being trained, the data no long
 - how many depths/examples to create;
 - where to publish the resulting Hub dataset.
 
-For a local `.txt` question file, each non-empty line is one question. For a local `.jsonl` file or HF Dataset, `source_question_field` selects the question text.
+The single PT source is `avreymi/reasoning-spectrum-qa` (split `data`, 1000 diverse QA across 6 reasoning families). For a local `.txt` question file, each non-empty line is one question. For a local `.jsonl` file, `source_question_field` selects the question text. For the spectrum dataset, `_extract_question` detects the schema (presence of `input_mode`) and calls `format_spectrum_question`, which assembles the full prompt body — `context` + `question` + `choices` — because many rows (commonsense, multiple-choice, multihop, extractive) are unanswerable from `question` alone. The answer fields (`gold_answer`, `gold_answer_label`, `reference_solution`, `supporting_facts`) must never reach G.
 
 #### 2. Build the current context
 
@@ -419,7 +419,7 @@ These are Hub dataset **configs** (`config_name="canonical"` and `config_name="t
 uv run pytest
 uv run python -m py_compile src/reasoning_pruning/*.py scripts/*.py
 uv run python scripts/reasoning_pruning_cli.py build-dataset \
-    --config configs/data/dataset_builder_gsm8k_100_gemma4.yaml --dry-run
+    --config configs/data/dataset_builder_spectrum_gemma4.yaml --dry-run
 ```
 
 The dry-run command may require the configured model provider to be runnable in the current environment. Gemma-4 dataset creation is intended for HF Jobs, not small local machines.

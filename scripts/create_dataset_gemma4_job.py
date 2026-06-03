@@ -15,7 +15,7 @@
 This script is intentionally thin: the real algorithm lives in
 `reasoning_pruning.data_creation`, while model-provider details live in
 `reasoning_pruning.clients`. It installs those from GitHub (the package is public),
-falls back to a GSM8K-r2 default config when no YAML is found, embeds the
+falls back to a reasoning-spectrum-qa r2 default config when no YAML is found, embeds the
 conservative-skip-v1 prompt so prompts/ directory is not needed, and lets
 environment variables override every config knob. It runs as a uv PEP 723 script
 on Hugging Face Jobs with `HF_TOKEN` and `GEMINI_API_KEY` supplied as secrets.
@@ -67,20 +67,20 @@ Return only JSON: has_removal (bool), removed_start_index (int), removed_end_ind
 Set can_continue_after_skip=true only when the unit at removed_end_index+1 contains actual math, logic, or a concrete fact — never a goal or intent statement.
 """
 
-# Default config: GSM8K 100 questions, round 2 (avreymi/gemma-4-E2B-it-reasoning-pruning as G).
+# Default config: reasoning-spectrum-qa, round 2 (avreymi/gemma-4-E2B-it-reasoning-pruning as G).
 # Override any field via the corresponding env var (see _apply_env_overrides).
 _DEFAULT_CONFIG = dict(
-    round_id="gsm8k-gemma4-100-r2",
+    round_id="spectrum-gemma4-r2",
     source_type="hf_dataset",
-    source_dataset="openai/gsm8k",
+    source_dataset="avreymi/reasoning-spectrum-qa",
     source_dataset_revision="main",
     source_questions_path=None,
-    source_subset="main",
-    source_split="train",
+    source_subset=None,
+    source_split="data",
     source_question_field="question",
-    source_limit=100,
+    source_limit=200,
     code_version=None,
-    hub_dataset_id="avreymi/reasoning-pruning-pt-gsm8k-100-gemma4-r2",
+    hub_dataset_id="avreymi/reasoning-pruning-pt-spectrum-gemma4-r2",
     private=True,
     generator={"provider": "transformers", "model_id": "avreymi/gemma-4-E2B-it-reasoning-pruning"},
     decision={
@@ -104,7 +104,7 @@ def main() -> int:
         print(f"Loaded config from {config_path_str}")
     else:
         config = DataCreationConfig(**_DEFAULT_CONFIG)
-        print("No config file found — using built-in GSM8K r2 defaults.")
+        print("No config file found — using built-in reasoning-spectrum-qa r2 defaults.")
 
     config = _apply_env_overrides(config)
 
