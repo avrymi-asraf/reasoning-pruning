@@ -22,7 +22,7 @@ decision:
   prompt_version: conservative-skip-v1
 
 generation:
-  max_new_tokens: 1024
+  max_new_tokens: 100
   temperature: 0.7
   do_sample: true
 
@@ -35,3 +35,5 @@ pruning:
 max_pruning_depth: 1
 max_examples_per_question: 1
 unit_split_strategy: numbered_or_lines
+max_retries_per_depth: 3
+max_units_per_batch: 2

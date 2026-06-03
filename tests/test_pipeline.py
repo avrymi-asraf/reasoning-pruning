@@ -45,6 +45,8 @@ def _config(round_id: str = "test") -> DataCreationConfig:
         max_pruning_depth=1,
         max_examples_per_question=1,
         unit_split_strategy="numbered_or_lines",
+        max_retries_per_depth=3,
+        max_units_per_batch=2,
     )
 
 
@@ -63,9 +65,9 @@ class _FakeDecisionModel:
     decision_model = "fake-d"
 
     def find_first_removable_span(self, *, question, context, reasoning_units):
-        if len(reasoning_units) < 3:
+        if len(reasoning_units) < 2:
             return PruningDecision(False, None, None, "too few units", False)
-        return PruningDecision(True, 1, 1, "filler", True)
+        return PruningDecision(True, 0, 0, "filler", True)
 
 
 def test_pipeline_produces_valid_training_rows():
@@ -94,7 +96,8 @@ def test_context_update_invariant_is_visible():
     )[0]
 
     next_context = f"{row['input_x']}\n{row['target_y']}"
-    assert next_context == format_context(row["question"], [row["generated_units"][0], row["target_y"]])
+    # remove_start=0 means no useful prefix; accepted_units = [target_y] only
+    assert next_context == format_context(row["question"], [row["target_y"]])
 
 
 def test_pipeline_returns_empty_when_no_removal_found():

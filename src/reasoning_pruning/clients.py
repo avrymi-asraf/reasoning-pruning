@@ -21,11 +21,31 @@ from reasoning_pruning.data_creation import GeneratedTrace, PruningDecision
 GeminiTransport = Callable[[str, dict[str, Any]], dict[str, Any]]
 
 
+class _NewlineStoppingCriteria:
+    """Stops generation once max_units newline-terminated reasoning units are complete.
+
+    Counts '\n' characters in the decoded generated text; each newline marks the end
+    of one numbered reasoning step. Fires after the Nth newline so G never starts
+    writing a (N+1)-th unit.
+    """
+
+    def __init__(self, tokenizer: Any, prompt_length: int, max_units: int) -> None:
+        self._tokenizer = tokenizer
+        self._prompt_length = prompt_length
+        self._max_units = max_units
+
+    def __call__(self, input_ids: Any, scores: Any, **kwargs: Any) -> bool:
+        generated_ids = input_ids[0][self._prompt_length :]
+        text = self._tokenizer.decode(generated_ids, skip_special_tokens=True)
+        return text.count("\n") >= self._max_units
+
+
 @dataclass
 class TransformersGenerator:
     source_model: str
     source_model_revision: str | None = None
     generation_config: dict[str, Any] = field(default_factory=dict)
+    max_units_per_batch: int = 2
 
     def __post_init__(self) -> None:
         try:
@@ -50,10 +70,16 @@ class TransformersGenerator:
         )
 
     def generate_reasoning(self, *, question: str, context: str) -> GeneratedTrace:
+        from transformers import StoppingCriteriaList
+
         prompt = _generator_prompt(self._tokenizer, context)
         inputs = self._tokenizer(prompt, return_tensors="pt").to(self._model.device)
-        output_ids = self._model.generate(**inputs, **self.generation_config)
-        generated_ids = output_ids[0][inputs["input_ids"].shape[-1] :]
+        prompt_length = inputs["input_ids"].shape[-1]
+        stopping_criteria = StoppingCriteriaList(
+            [_NewlineStoppingCriteria(self._tokenizer, prompt_length, self.max_units_per_batch)]
+        )
+        output_ids = self._model.generate(**inputs, **self.generation_config, stopping_criteria=stopping_criteria)
+        generated_ids = output_ids[0][prompt_length:]
         text = self._tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
         return GeneratedTrace(text=text, generation_config=dict(self.generation_config))
 
@@ -150,13 +176,16 @@ class GeminiDecisionModel:
         return parse_json_pruning_decision(text)
 
 
-def create_generator_from_config(config: dict[str, Any], generation: dict[str, Any]):
+def create_generator_from_config(
+    config: dict[str, Any], generation: dict[str, Any], max_units_per_batch: int = 2
+):
     provider = config.get("provider", "transformers")
     if provider == "transformers":
         return TransformersGenerator(
             source_model=str(config["model_id"]),
             source_model_revision=config.get("revision"),
             generation_config=dict(generation),
+            max_units_per_batch=max_units_per_batch,
         )
     if provider == "gemini":
         return GeminiGenerator(

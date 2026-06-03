@@ -101,7 +101,7 @@ def _build_rows_from_config(config: DataCreationConfig) -> list[dict]:
         return []
 
     questions = load_questions(config, hf_token=os.environ.get("HF_TOKEN"))
-    generator = create_generator_from_config(config.generator, config.generation)
+    generator = create_generator_from_config(config.generator, config.generation, max_units_per_batch=config.max_units_per_batch)
     decision_model = create_decision_model_from_config(config.decision, config.pruning)
     return build_pt_dataset(
         questions=questions,

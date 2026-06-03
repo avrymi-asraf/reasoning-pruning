@@ -42,6 +42,8 @@ class DataCreationConfig:
     max_pruning_depth: int
     max_examples_per_question: int
     unit_split_strategy: str
+    max_retries_per_depth: int
+    max_units_per_batch: int
 
 
 @dataclass(frozen=True)
@@ -121,6 +123,8 @@ def load_data_creation_config(path: Path) -> DataCreationConfig:
         max_pruning_depth=int(raw.get("max_pruning_depth", 1)),
         max_examples_per_question=int(raw.get("max_examples_per_question", 1)),
         unit_split_strategy=str(raw.get("unit_split_strategy", "numbered_or_lines")),
+        max_retries_per_depth=int(raw.get("max_retries_per_depth", 3)),
+        max_units_per_batch=int(raw.get("max_units_per_batch", 2)),
     )
 
 
@@ -301,34 +305,46 @@ def build_rows_for_question(
             break
 
         context = format_context(question, accepted_units)
-        trace = generator.generate_reasoning(question=question, context=context)
-        units = split_reasoning_units(trace.text, strategy=config.unit_split_strategy)
-        if len(units) < 2:
-            break
 
-        decision = decision_model.find_first_removable_span(
-            question=question,
-            context=context,
-            reasoning_units=units,
-        )
-        if not decision.valid_for(units):
+        trace_out = None
+        units_out = None
+        decision_out = None
+        attempts = 0
+
+        for _ in range(config.max_retries_per_depth):
+            attempts += 1
+            trace = generator.generate_reasoning(question=question, context=context)
+            units = split_reasoning_units(trace.text, strategy=config.unit_split_strategy)[
+                : config.max_units_per_batch
+            ]
+            if len(units) < 2:
+                continue
+            decision = decision_model.find_first_removable_span(
+                question=question, context=context, reasoning_units=units
+            )
+            if decision.valid_for(units):
+                trace_out, units_out, decision_out = trace, units, decision
+                break
+
+        if decision_out is None:
             break
 
         row = build_pruning_transition_row(
             question=question,
             context_before_generation=context,
-            generated_trace=trace.text,
-            generated_units=units,
-            decision=decision,
+            generated_trace=trace_out.text,
+            generated_units=units_out,
+            decision=decision_out,
             depth=depth,
             generator_model=generator.source_model,
             round_id=config.round_id,
             generator_model_revision=generator.source_model_revision,
             decision_model=decision_model.decision_model,
         )
+        row["metadata"]["retry_attempts"] = attempts
         rows.append(row)
 
-        accepted_units = advance_context_units(accepted_units, units, decision)
+        accepted_units = advance_context_units(accepted_units, units_out, decision_out)
         assert format_context(question, accepted_units) == f"{row['input_x']}\n{row['target_y']}"
 
     return rows

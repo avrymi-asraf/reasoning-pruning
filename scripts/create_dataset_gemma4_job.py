@@ -89,11 +89,13 @@ _DEFAULT_CONFIG = dict(
         "api_key_env": "GEMINI_API_KEY",
         "prompt_version": "conservative-skip-v1",
     },
-    generation={"max_new_tokens": 512, "temperature": 0.7, "do_sample": True},
+    generation={"max_new_tokens": 100, "temperature": 0.7, "do_sample": True},
     pruning={"conservative": True, "require_following_step": True, "max_output_tokens": 256, "temperature": 0.0},
     max_pruning_depth=1,
     max_examples_per_question=1,
     unit_split_strategy="numbered_or_lines",
+    max_retries_per_depth=3,
+    max_units_per_batch=2,
 )
 
 
@@ -112,7 +114,7 @@ def main() -> int:
     questions = load_questions(config, hf_token=os.environ.get("HF_TOKEN"))
 
     print(f"Loading generator: {config.generator['model_id']}")
-    generator = create_generator_from_config(config.generator, config.generation)
+    generator = create_generator_from_config(config.generator, config.generation, max_units_per_batch=config.max_units_per_batch)
 
     prompt_version = config.decision.get("prompt_version", "conservative-skip-v1")
     prompts_dir = _write_embedded_prompt(prompt_version)
@@ -181,6 +183,8 @@ def _apply_env_overrides(config: DataCreationConfig) -> DataCreationConfig:
         max_examples_per_question=int(
             os.environ.get("MAX_EXAMPLES_PER_QUESTION", config.max_examples_per_question)
         ),
+        max_retries_per_depth=int(os.environ.get("MAX_RETRIES_PER_DEPTH", config.max_retries_per_depth)),
+        max_units_per_batch=int(os.environ.get("MAX_UNITS_PER_BATCH", config.max_units_per_batch)),
         generator=generator,
         decision=decision,
         generation=generation,
