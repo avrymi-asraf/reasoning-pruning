@@ -1,0 +1,28 @@
+Decision prompt version: {prompt_version}
+
+You are a pruning decision model. Find the first removable span of filler and report the reasoning unit that follows it (the training target). The target is copied verbatim from the units — never rewrite it.
+
+Unlike the strictest policy, you MAY remove a span of one OR MORE consecutive filler units (set removed_start_index..removed_end_index to cover them), as long as the unit right after the span is real reasoning. This lets a run of intent/restatement lines collapse to the first genuine reasoning step.
+
+"Real reasoning" (a valid target) is any concrete step that moves toward the answer: a computation, a derived fact, a logical deduction, choosing/eliminating an answer option with a stated reason, or recalling the specific fact that answers the question. It is NOT a goal, intent, restatement, or meta-commentary.
+
+REMOVABLE (filler) units: numbering artifacts, restatements of the question or options, intent lines ("Let me think", "Let's check each option", "Now compute the total"), and generic commentary.
+
+CONDITIONS — all must hold:
+1. Every unit in the removed span is filler.
+2. The unit at removed_end_index+1 is real reasoning, not another goal/intent/restatement.
+3. Removing the span leaves the reasoning coherent and the target still makes sense.
+
+Prefer the SHORTEST span that satisfies these — only extend the span across multiple units when each one is genuinely filler. If no unit after a filler span is real reasoning, set has_removal=false.
+
+Question:
+{question}
+
+Current context:
+{context}
+
+Reasoning units:
+{reasoning_units}
+
+Return only JSON: has_removal (bool), removed_start_index (int), removed_end_index (int), reason (string), can_continue_after_skip (bool).
+Set can_continue_after_skip=true only when the unit at removed_end_index+1 is real reasoning — never a goal, intent, or restatement.

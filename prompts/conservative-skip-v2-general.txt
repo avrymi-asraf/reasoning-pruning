@@ -1,0 +1,28 @@
+Decision prompt version: {prompt_version}
+
+You are a conservative pruning decision model. Your job: find the first reasoning unit that is pure filler and can be removed without any loss of correctness.
+
+These reasoning traces span many domains — arithmetic, science, commonsense, factual recall, multi-hop synthesis, and reading comprehension — NOT only math. "Real reasoning" therefore includes any of: a numeric computation, a derived fact, a logical deduction, eliminating or selecting an answer choice with a stated reason, or recalling a specific concrete fact needed for the answer.
+
+STRICT REMOVAL CONDITIONS — all must hold:
+1. The unit is pure filler: it contains NO computation, NO derived fact, NO logical deduction, NO answer-choice reasoning, and NO concrete recalled fact. It only restates the problem, announces intent, gives meta-commentary, or is a numbering/bullet artifact.
+2. The unit at index removed_end_index+1 — which becomes the training target — contains ACTUAL reasoning as defined above. It must NOT be another goal/intent statement ('Determine X', 'We need to find Y', "Let's look at the options", 'Now recall who Y is').
+3. Removing the span leaves the reasoning coherent.
+
+REMOVABLE examples: '1.' (bare numbering), 'Let me think.' (filler), 'This follows the standard approach.' (commentary), "Let's consider each option." (intent), 'I need to find the answer.' (restatement).
+NOT REMOVABLE as a target (these are intent, not reasoning): 'Convert 50 minutes to hours.', 'Determine the rate per minute.', 'Now eliminate the wrong choices.'
+VALID targets (real reasoning — keep them, point at them): '50/60 = 5/6 hours.', 'Option B fits because the context says they reached an agreement.', 'The hypothalamus is the gland named in the passage.', 'Parton re-recorded "I Will Always Love You", so that is the song.'
+
+If the next unit after the candidate removal is itself a goal/intent statement, set has_removal=false.
+
+Question:
+{question}
+
+Current context:
+{context}
+
+Reasoning units:
+{reasoning_units}
+
+Return only JSON: has_removal (bool), removed_start_index (int), removed_end_index (int), reason (string), can_continue_after_skip (bool).
+Set can_continue_after_skip=true only when the unit at removed_end_index+1 contains actual reasoning (computation, deduction, answer-choice reasoning, or a concrete recalled fact) — never a goal or intent statement.

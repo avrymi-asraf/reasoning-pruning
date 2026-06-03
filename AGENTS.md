@@ -12,12 +12,10 @@ Data creation was intentionally collapsed into a small set of files:
 | `src/reasoning_pruning/clients.py` | Generator G and decision model D clients for Transformers and Gemini, plus prompt loading, Gemini REST calls, and JSON decision parsing. |
 | `src/reasoning_pruning/cli.py` | Local CLI wiring for `build-dataset` and `inspect-dataset`; loads `.env`, builds clients, runs data creation, and optionally publishes. |
 | `scripts/create_dataset_gemma4_job.py` | Thin HF Jobs wrapper around the shared data-creation library for Gemma-4 dataset creation. |
-| `scripts/generate_traces.py` | Local helper that runs G and writes cached traces to `data/traces/*.jsonl`. |
-| `scripts/replay_decisions.py` | Local helper that runs D on cached traces with any `prompts/*.txt` file. |
 | `configs/data/*.yaml` | Dataset-builder configs. |
 | `prompts/*.txt` | Decision-model prompt templates. |
 | `src/reasoning_pruning/training_config.py` and `scripts/train_pt_dataset_job.py` | Training config and HF Jobs training entry point. |
-| `notebooks/data_creation_playground.ipynb` | Google Colab notebook for the full multi-depth data-creation playground. Calls `build_rows_for_question` and `build_pt_dataset` directly — no wrapper functions. Must stay in sync with the library API. |
+| `notebooks/data_creation_playground.ipynb` | Google Colab notebook for the full multi-depth data-creation playground — and the sole place to iterate D prompts (runs G live on Colab GPU). Calls `build_rows_for_question` and `build_pt_dataset` directly — no wrapper functions. Must stay in sync with the library API. |
 
 Do not recreate the previous many-file data-creation split unless the project grows enough to justify the indirection.
 

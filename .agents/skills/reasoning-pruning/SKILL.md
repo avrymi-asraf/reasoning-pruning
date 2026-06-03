@@ -144,38 +144,6 @@ via YAML or env vars. Scripts may have model-specific names (e.g.
 `create_dataset_gemma4_job.py`) but their internal logic must extend cleanly to any
 other model by changing only config values.
 
-## Trace generation (no D model)
-
-`scripts/generate_traces_job.py` is a PEP 723 HF Jobs script that generates raw G
-traces from the single PT source `avreymi/reasoning-spectrum-qa` without running D.
-Use it to build trace caches before applying D decisions. It installs the package
-from git so it can reuse `format_spectrum_question` (the same prompt assembly the
-real builder uses).
-
-Submit via CLI (local file path is accepted):
-```bash
-source .env && .venv/bin/hf jobs uv run \
-  --flavor a10g-small \
-  --timeout 60m \
-  --secrets HF_TOKEN \
-  --detach \
-  scripts/generate_traces_job.py
-```
-
-Then monitor with:
-```bash
-source .env && .venv/bin/hf jobs logs --tail 40 <job-id>
-source .env && .venv/bin/hf jobs logs -f <job-id>   # live stream (blocking)
-```
-
-The script reads `GENERATOR_MODEL`, `HUB_OUTPUT`, `N_QUESTIONS`, and `PUSH_EVERY`
-from env vars; defaults produce 100 traces at `avreymi/reasoning-traces-spectrum-gemma4`.
-The output dataset schema: `source_dataset`, `reasoning_family`, `question`, `trace`,
-`units` (list[str]), pushed to the default `train` split (no per-source configs).
-The full accumulated dataset is re-pushed every `PUSH_EVERY` rows (default 25) so a
-timeout never loses completed work. Gemma-4 traces run long — 60m is not enough for
-100 traces on a10g-small; use `--timeout 2h`.
-
 ## Source and dataset-builder config
 
 The single PT source is `avreymi/reasoning-spectrum-qa` (split `data`, 1000 diverse
@@ -221,26 +189,12 @@ The `build-dataset --dry-run` CLI command and `inspect-dataset` command only wor
 configs that use a Gemini or local-file generator, not `transformers` provider, because
 Gemma-4-E2B-it can't be loaded locally without a GPU.
 
-D-prompt playground (local, Gemini as D):
-
-`scripts/generate_traces.py --config <cfg.yaml> --output data/traces/out.jsonl` — loads
-questions from the configured source, calls G once per question, saves trace+units to JSONL.
-`scripts/replay_decisions.py --traces data/traces/out.jsonl --prompt prompts/<version>.txt` —
-runs D on the cached traces with any `.txt` prompt file. Swap and re-run to compare D
-prompt versions without regenerating G traces. Requires `GEMINI_API_KEY` in `.env`.
-
-The script also supports loading directly from the Hub (skipping local JSONL):
-`scripts/replay_decisions.py --hub --prompt prompts/<version>.txt --limit 10`
-loads cached traces from `avreymi/reasoning-traces-spectrum-gemma4`. Requires
-`HF_TOKEN` + `GEMINI_API_KEY`.
-
-Output shows the decision AND the actual PT row (input_x, target_y) that would be
-emitted — only depth-0 rows since the cached dataset has one raw trace per question.
-
-## Full multi-depth playground (Google Colab)
+## Full multi-depth playground (Google Colab) — the D-prompt playground
 
 `notebooks/data_creation_playground.ipynb` — runs the complete multi-depth pipeline
-on Colab GPU. G = Gemma-4 (local on Colab), D = Gemini Flash Lite (cloud).
+on Colab GPU. G = Gemma-4 (local on Colab), D = Gemini Flash Lite (cloud). This is the
+**only** place to iterate D prompts: there is no cached-trace workflow — G runs live on
+the Colab GPU so every prompt change is judged against fresh traces.
 
 **Gemma 4 requires transformers from git main** — not in any stable PyPI release.
 The setup cell installs `git+https://github.com/huggingface/transformers.git`. Do not
@@ -251,14 +205,19 @@ secrets, then run cells top-to-bottom. The notebook:
 
 1. Clones the repo and installs deps (transformers from git, ~2 min)
 2. Initializes G from `avreymi/gemma-4-E2B-it-reasoning-pruning` (~5GB download, ~1-2 min)
-3. Loads the GSM8K dataset-builder config, then overrides `max_pruning_depth` with
-   `dataclasses.replace(config, max_pruning_depth=4)` for quick runs
+3. Loads the spectrum dataset-builder config and pulls real questions via
+   `load_questions`, then overrides `max_pruning_depth`/`source_limit` with
+   `dataclasses.replace(...)` for quick runs
 4. Calls `build_rows_for_question` (single question, full depth loop, verbose output)
    or `build_pt_dataset` (multiple questions, summary)
 
 `build_rows_for_question` is the right entry point for the playground — it is the
 same function `build_pt_dataset` calls internally, now exposed as a public API.
-Change the `prompt_version` in the D init cell to test new prompts; no other changes needed.
+
+**Iterating D prompts:** add a new `prompts/<version>.txt`, change the `prompt_version`
+argument in the D init cell to its stem, and re-run the build cells. Compare the
+removal rate and the emitted `input_x → target_y` rows across versions. The current
+prompt is `conservative-skip-v1`; the only other knob is the wording in `prompts/`.
 
 **Notebook alignment:** the notebook calls production library functions directly with no
 wrappers. When public signatures in `data_creation.py` or `clients.py` change, or when
