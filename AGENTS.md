@@ -62,9 +62,16 @@ For one question at depth `d`:
 
 ```python
 context = format_context(question, accepted_units)
-trace = G.generate_reasoning(question=question, context=context)
-generated_units = split_reasoning_units(trace.text)
-decision = D.find_first_removable_span(question, context, generated_units)
+for retry_attempts in range(1, max_retries_per_depth + 1):
+    trace = G.generate_reasoning(question=question, context=context)
+    generated_units = split_reasoning_units(trace.text)
+    if not 2 <= len(generated_units) <= max_units_per_batch:
+        continue
+    decision = D.find_first_removable_span(question, context, generated_units)
+    if decision.valid_for(generated_units):
+        break
+else:
+    stop_this_question()
 
 start = decision.removed_start_index
 end = decision.removed_end_index
@@ -211,13 +218,15 @@ scripts/reasoning_pruning_cli.py build-dataset / inspect-dataset
               │  for each question and depth:
               │
               ├── format_context(question, accepted_units)
-              ├── G.generate_reasoning(question=question, context=context)
-              ├── split_reasoning_units(trace.text, strategy=config.unit_split_strategy)
-              ├── D.find_first_removable_span(question, context, generated_units)
-              ├── decision.valid_for(generated_units)
-              ├── build_pruning_transition_row(...)
+              ├── retry from the same context up to max_retries_per_depth:
+              │     ├── G.generate_reasoning(question=question, context=context)
+              │     ├── split_reasoning_units(trace.text, strategy=config.unit_split_strategy)
+              │     ├── require 2..max_units_per_batch units
+              │     ├── D.find_first_removable_span(question, context, generated_units)
+              │     └── discard the attempt unless decision.valid_for(generated_units)
+              ├── build_pruning_transition_row(...) from the successful attempt only
               ├── advance_context_units(accepted_units, generated_units, decision)
-              └── repeat until no valid skip or limits stop the loop
+              └── repeat until retries fail or limits stop the loop
 ```
 
 Publishing is part of `data_creation.py` too: `push_pt_dataset_to_hub(...)` turns rows into a `canonical` config and a `training` config in the same HF dataset repo.
@@ -273,9 +282,11 @@ This context is exactly what G sees when it is asked to continue reasoning.
 
 #### 3. Ask G to generate reasoning
 
-`src/reasoning_pruning/clients.py` creates the configured generator client. The generator receives the current context and an instruction to continue with concrete computations, deductions, or facts instead of goal statements.
+`src/reasoning_pruning/clients.py` creates the configured generator client. The generator receives the current context and an instruction to write a short batch of numbered reasoning units, bounded by `max_units_per_batch` and `generation.max_new_tokens`, without telling G which reasoning habits D should prune. Transformers generation stops live after the configured number of newline-terminated units; Gemini relies on the prompt and token budget.
 
-Example raw trace from G:
+Each depth retries from the exact same clean context up to `max_retries_per_depth`. Attempts with too few or too many units, or with no valid D decision, are discarded completely and never enter a row or the accepted context.
+
+Example raw trace from a successful G attempt:
 
 ```text
 1. We need to find the total cost.

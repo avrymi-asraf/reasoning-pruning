@@ -56,7 +56,7 @@ class _FakeGenerator:
 
     def generate_reasoning(self, *, question, context):
         return GeneratedTrace(
-            text="First, restate the problem. Now, this step is redundant filler. Finally, 2 + 3 = 5.",
+            text="1. We need to find the sum.\n2. 2 + 3 = 5.",
             generation_config={},
         )
 
@@ -96,8 +96,72 @@ def test_context_update_invariant_is_visible():
     )[0]
 
     next_context = f"{row['input_x']}\n{row['target_y']}"
-    # remove_start=0 means no useful prefix; accepted_units = [target_y] only
     assert next_context == format_context(row["question"], [row["target_y"]])
+
+
+def test_pipeline_discards_failed_attempts_and_retries_from_the_same_context():
+    class _RetryingGenerator:
+        source_model = "fake-g"
+        source_model_revision = "v0"
+
+        def __init__(self):
+            self.contexts = []
+            self.traces = iter(
+                [
+                    "1. Add the numbers.\n2. Calculate the result.",
+                    "1. We need to find the sum.\n2. 2 + 3 = 5.",
+                ]
+            )
+
+        def generate_reasoning(self, *, question, context):
+            self.contexts.append(context)
+            return GeneratedTrace(text=next(self.traces), generation_config={})
+
+    class _SecondAttemptDecisionModel:
+        decision_model = "fake-d"
+
+        def find_first_removable_span(self, *, reasoning_units, **_):
+            if reasoning_units[1] == "2 + 3 = 5.":
+                return PruningDecision(True, 0, 0, "filler", True)
+            return PruningDecision(False, None, None, "no useful target", False)
+
+    generator = _RetryingGenerator()
+    rows = build_pt_dataset(
+        questions=["What is 2 + 3?"],
+        generator=generator,
+        decision_model=_SecondAttemptDecisionModel(),
+        config=_config(),
+    )
+
+    assert len(rows) == 1
+    assert generator.contexts == ["Question:\nWhat is 2 + 3?"] * 2
+    assert rows[0]["generated_trace"] == "1. We need to find the sum.\n2. 2 + 3 = 5."
+    assert rows[0]["generated_units"] == ["We need to find the sum.", "2 + 3 = 5."]
+    assert rows[0]["metadata"]["retry_attempts"] == 2
+
+
+def test_pipeline_rejects_batches_larger_than_the_configured_unit_limit():
+    class _OversizedGenerator:
+        source_model = "fake-g"
+        source_model_revision = "v0"
+
+        def __init__(self):
+            self.calls = 0
+
+        def generate_reasoning(self, **_):
+            self.calls += 1
+            return GeneratedTrace(text="1. Filler.\n2. 2 + 3 = 5.\n3. The answer is 5.", generation_config={})
+
+    generator = _OversizedGenerator()
+    rows = build_pt_dataset(
+        questions=["What is 2 + 3?"],
+        generator=generator,
+        decision_model=_FakeDecisionModel(),
+        config=_config(),
+    )
+
+    assert rows == []
+    assert generator.calls == 3
 
 
 def test_pipeline_returns_empty_when_no_removal_found():

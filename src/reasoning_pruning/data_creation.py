@@ -123,8 +123,8 @@ def load_data_creation_config(path: Path) -> DataCreationConfig:
         max_pruning_depth=int(raw.get("max_pruning_depth", 1)),
         max_examples_per_question=int(raw.get("max_examples_per_question", 1)),
         unit_split_strategy=str(raw.get("unit_split_strategy", "numbered_or_lines")),
-        max_retries_per_depth=int(raw.get("max_retries_per_depth", 3)),
-        max_units_per_batch=int(raw.get("max_units_per_batch", 2)),
+        max_retries_per_depth=_positive_int(raw.get("max_retries_per_depth", 3), "max_retries_per_depth"),
+        max_units_per_batch=_minimum_int(raw.get("max_units_per_batch", 2), "max_units_per_batch", minimum=2),
     )
 
 
@@ -314,10 +314,8 @@ def build_rows_for_question(
         for _ in range(config.max_retries_per_depth):
             attempts += 1
             trace = generator.generate_reasoning(question=question, context=context)
-            units = split_reasoning_units(trace.text, strategy=config.unit_split_strategy)[
-                : config.max_units_per_batch
-            ]
-            if len(units) < 2:
+            units = split_reasoning_units(trace.text, strategy=config.unit_split_strategy)
+            if not 2 <= len(units) <= config.max_units_per_batch:
                 continue
             decision = decision_model.find_first_removable_span(
                 question=question, context=context, reasoning_units=units
@@ -419,6 +417,17 @@ def _mapping(raw: dict[str, Any], key: str, *, default: dict[str, Any] | None = 
 
 def _optional_str(value: Any) -> str | None:
     return None if value is None else str(value)
+
+
+def _positive_int(value: Any, field_name: str) -> int:
+    return _minimum_int(value, field_name, minimum=1)
+
+
+def _minimum_int(value: Any, field_name: str, *, minimum: int) -> int:
+    parsed = int(value)
+    if parsed < minimum:
+        raise ValueError(f"{field_name} must be at least {minimum}")
+    return parsed
 
 
 def _optional_int(value: Any) -> int | None:

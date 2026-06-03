@@ -38,12 +38,13 @@ The automatic loop is:
 1. Load source questions from config. Supported sources are local smoke/test
    files (`txt` or `jsonl`) and Hugging Face Dataset splits using the configured
    question field, split, revision, token, and optional limit.
-2. Ask the current generator model version to generate reasoning for the current pruned context.
-3. Split generated text into reasoning units with the configured strategy.
+2. Ask the current generator model version for a short reasoning batch from the current pruned context.
+3. Split generated text into reasoning units and require 2..`max_units_per_batch` units.
 4. Ask the decision model for the first conservative safe skip.
-5. Build one canonical PT row.
-6. Update the pruned context by keeping useful prefix plus the next useful step.
-7. Repeat until no safe skip, invalid next step, max depth, max examples, or generation failure.
+5. Discard invalid attempts and retry from the unchanged context up to `max_retries_per_depth`.
+6. Build one canonical PT row from the successful attempt only.
+7. Update the pruned context by keeping useful prefix plus the next useful step.
+8. Repeat until retries fail, max depth, max examples, or generation failure.
 
 Keep the detailed walkthrough in `AGENTS.md` and `docs/data_creation.md` in sync with this loop. It is intentionally verbose because future agents need the examples and invariants to avoid corrupting data creation.
 
@@ -100,7 +101,7 @@ be trained on the resulting rows.
 
 The active generator model is `avreymi/gemma-4-E2B-it-reasoning-pruning`.
 
-Decision prompt quality rule (conservative-skip-v1, updated 2026-05-28):
+Decision prompt quality rule (incremental-skip-v2, updated 2026-06-03):
 
 `can_continue_after_skip=true` requires that the unit at `removed_end_index+1` contains
 ACTUAL computation, a derived fact, or a logical deduction — NOT a goal statement
@@ -109,9 +110,9 @@ filler. The prompt now contains explicit REMOVABLE vs NOT REMOVABLE examples.
 
 Generator prompt rule:
 
-The G prompt explicitly says "write each step as a concrete computation, deduction, or
-fact — do not write goal statements or intent". For instruction-tuned models (ending in
-`-it`), use `apply_chat_template` with a user message.
+The G prompt requests a fixed short batch of numbered steps, one per line, but must not tell
+G which reasoning habits D should prune. For instruction-tuned models (ending in `-it`), use
+`apply_chat_template` with a user message.
 
 No backward compatibility:
 
@@ -121,7 +122,7 @@ shims, re-exports for removed names, or parallel old/new code paths.
 Prompts folder:
 
 Decision-model prompt templates live in `prompts/` as `.txt` files named by
-`prompt_version` (e.g. `prompts/conservative-skip-v1.txt`). The local package
+`prompt_version` (e.g. `prompts/incremental-skip-v2.txt`). The local package
 (`clients.py`) loads from this directory via `load_prompt_template(version,
 prompts_dir)`. The HF Jobs script (`create_dataset_gemma4_job.py`) now uses the
 shared package code instead of embedding a separate prompt constant. To create a
@@ -201,7 +202,7 @@ Round 2 data creation jobs (submitted 2026-06-02, all running):
 
 HF Jobs job script fix (2026-06-02): `create_dataset_gemma4_job.py` now installs the package via
 `git+https://github.com/avrymi-asraf/reasoning-pruning.git` in PEP 723 deps, embeds the
-conservative-skip-v1 prompt (prompts/ dir not available on HF Jobs), defaults to GSM8K r2 config,
+incremental-skip-v2 prompt (prompts/ dir not available on HF Jobs), defaults to GSM8K r2 config,
 and supports all source fields as env vars. Pass `SOURCE_DATASET`, `SOURCE_SUBSET`, `SOURCE_SPLIT`,
 `SOURCE_QUESTION_FIELD`, `SOURCE_LIMIT`, `HUB_DATASET_ID`, `ROUND_ID`, `MAX_NEW_TOKENS` to run
 any of the 4 datasets without needing the YAML on the server.
