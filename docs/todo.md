@@ -32,3 +32,9 @@ The idea of this project is to train a model to pruning-reasening-traces that it
 to do this, I want to determine a seed, so when we make train the model, is on the same seed. is this possible?
 
 
+# pruning data as learning
+in this stage it semms that the pruning data is not so good. especially in gamma. it think ok, we don't find so  match what to imporve. I want use pruning data as learning. it means - tell the agent how to use a tool, make it complicated. we assume the agent need a reasoning trace to use the tool. step by step, even if the reasoning is sence remove the reasoning and teach the agent to use it automatically. we need to find a dataset about tools. with skills ect. then try this.
+
+
+# Use a qualitative test rather
+instead of runing the test, create file that print every step, we can see how it looks and make better decisions about what we need to do. this is the tests I need in this project.
