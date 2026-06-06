@@ -39,7 +39,7 @@ Unchanged. `target_y` is still `generated_units[end + 1]` from the successful G 
 
 For Transformers models, generation halts the moment G writes its N-th `\n` character. This is implemented via `StoppingCriteria` — a callback called after every token. Each newline marks the end of one numbered reasoning step, so stopping at newline N = stopping after N complete units. G never even starts writing unit N+1.
 
-For Gemini G, live stopping is not available via the REST API. `max_new_tokens` (as `maxOutputTokens`) acts as the only budget cap.
+For Gemini G, live stopping is not available via the REST API. The prompt requests exactly `max_units_per_batch` numbered lines and `max_new_tokens` (as `maxOutputTokens`) acts as the budget cap. If any provider returns more than `max_units_per_batch` split units, the attempt is discarded rather than truncating it; this preserves the invariant that `generated_units` is a split of the exact stored `generated_trace`.
 
 ## Parameters
 

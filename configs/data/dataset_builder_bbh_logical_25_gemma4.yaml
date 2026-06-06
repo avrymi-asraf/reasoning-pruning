@@ -19,7 +19,7 @@ decision:
   provider: gemini-json
   model_id: gemini-3.1-flash-lite
   api_key_env: GEMINI_API_KEY
-  prompt_version: conservative-skip-v1
+  prompt_version: incremental-skip-v2
 
 generation:
   max_new_tokens: 100

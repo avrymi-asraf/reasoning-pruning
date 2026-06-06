@@ -113,7 +113,7 @@ class TransformersGenerator:
     def generate_reasoning(self, *, question: str, context: str) -> GeneratedTrace:
         from transformers import StoppingCriteriaList
 
-        prompt = _generator_prompt(self._tokenizer, context)
+        prompt = _generator_prompt(self._tokenizer, context, self.max_units_per_batch)
         inputs = self._tokenizer(prompt, return_tensors="pt").to(self._model.device)
         prompt_length = inputs["input_ids"].shape[-1]
         stopping_criteria = StoppingCriteriaList(
@@ -130,15 +130,12 @@ class GeminiGenerator:
     source_model: str
     source_model_revision: str | None = None
     generation_config: dict[str, Any] = field(default_factory=dict)
+    max_units_per_batch: int = 2
     api_key_env: str = "GEMINI_API_KEY"
     transport: GeminiTransport | None = None
 
     def generate_reasoning(self, *, question: str, context: str) -> GeneratedTrace:
-        prompt = (
-            f"{context}\n\n"
-            "Continue the reasoning. Write each step as a concrete computation, deduction, "
-            "or fact. Do not write goal statements or intent — compute directly."
-        )
+        prompt = _generator_instruction(context, self.max_units_per_batch)
         text = gemini_generate_text(
             model=self.source_model,
             prompt=prompt,
@@ -154,7 +151,7 @@ class TransformersDecisionModel:
     decision_model: str
     decision_config: dict[str, Any] = field(default_factory=dict)
     revision: str | None = None
-    prompt_version: str = "conservative-skip-v1"
+    prompt_version: str = "incremental-skip-v2"
     prompts_dir: str = "prompts"
 
     def __post_init__(self) -> None:
@@ -191,7 +188,7 @@ class GeminiDecisionModel:
     decision_model: str
     decision_config: dict[str, Any] = field(default_factory=dict)
     revision: str | None = None
-    prompt_version: str = "conservative-skip-v1"
+    prompt_version: str = "incremental-skip-v2"
     prompts_dir: str = "prompts"
     api_key_env: str = "GEMINI_API_KEY"
     transport: GeminiTransport | None = None
@@ -232,6 +229,7 @@ def create_generator_from_config(
             source_model=str(config["model_id"]),
             source_model_revision=config.get("revision"),
             generation_config=dict(generation),
+            max_units_per_batch=max_units_per_batch,
             api_key_env=str(config.get("api_key_env", "GEMINI_API_KEY")),
         )
     raise ValueError(f"unsupported generator provider: {provider}")
@@ -241,7 +239,7 @@ def create_decision_model_from_config(
     config: dict[str, Any], pruning: dict[str, Any], prompts_dir: str = "prompts"
 ):
     provider = config.get("provider", "transformers-json")
-    prompt_version = str(config.get("prompt_version", "conservative-skip-v1"))
+    prompt_version = str(config.get("prompt_version", "incremental-skip-v2"))
     decision_config = dict(pruning)
     decision_config["prompt_version"] = prompt_version
 
@@ -342,12 +340,8 @@ def gemini_rest_transport(url: str, body: dict[str, Any]) -> dict[str, Any]:
         raise RuntimeError(f"Gemini API error {exc.code}: {message}") from exc
 
 
-def _generator_prompt(tokenizer: Any, context: str) -> str:
-    content = (
-        f"{context}\n\n"
-        "Continue the reasoning. Write each step as a concrete computation, deduction, "
-        "or fact. Do not write goal statements or intent — compute directly."
-    )
+def _generator_prompt(tokenizer: Any, context: str, max_units: int = 2) -> str:
+    content = _generator_instruction(context, max_units)
     if getattr(tokenizer, "chat_template", None):
         return tokenizer.apply_chat_template(
             [{"role": "user", "content": content}],
@@ -355,6 +349,14 @@ def _generator_prompt(tokenizer: Any, context: str) -> str:
             add_generation_prompt=True,
         )
     return content
+
+
+def _generator_instruction(context: str, max_units: int) -> str:
+    return (
+        f"{context}\n\n"
+        f"Continue the reasoning with exactly {max_units} numbered steps, one step per line. "
+        "Do not write anything outside the numbered steps."
+    )
 
 
 def _extract_gemini_text(response: dict[str, Any]) -> str:
