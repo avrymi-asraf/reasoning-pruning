@@ -32,3 +32,20 @@ The idea of this project is to train a model to pruning-reasening-traces that it
 to do this, I want to determine a seed, so when we make train the model, is on the same seed. is this possible?
 
 
+# pruning data as learning 
+in this stage it semms that the pruning data is not so good. especially in gamma. it think ok, we don't find so  match what to imporve. I want use pruning data as learning. it means - tell the agent how to use a tool, make it complicated. we assume the agent need a reasoning trace to use the tool. step by step, even if the reasoning is sence remove the reasoning and teach the agent to use it automatically. we need to find a dataset about tools. with skills ect. then try this.
+it also mean that we need My goal now is to remove one sentence at a time, meaning I have to tell it to find the first sentence that is the least necessary.
+I don't want to get to a situation where the model tells me - all sentences are necessary. That is, from every reasoning trace I expect us to remove some sentence.
+
+# Use a qualitative test rather
+instead of runing the test, create file that print every step, we can see how it looks and make better decisions about what we need to do. this is the tests I need in this project.
+
+
+# structure results from the D model. - run by codex
+use fix the D model to use structure results, it means to use the option that return the results as json.
+search in the internet what is the best way to do this.
+
+
+# simplify the code
+make the code simple, the code need to be modular the functoins need to be simple, clear, and intuative! think about every function how to make it intuitive as possible.
+

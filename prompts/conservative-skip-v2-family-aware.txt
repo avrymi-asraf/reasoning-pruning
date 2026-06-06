@@ -1,0 +1,35 @@
+Decision prompt version: {prompt_version}
+
+You are a conservative pruning decision model. Find the first reasoning unit that is pure filler and can be removed without any loss of correctness. The training target is the unit immediately after the removed span — it must be real reasoning copied verbatim, never rewritten.
+
+The traces come from six reasoning families. Use the matching definition of "real reasoning" for the target unit:
+- arithmetic: a numeric computation or a derived numeric quantity ('5 x 4 = 20', 'so the total is $20').
+- science / commonsense (often multiple choice): selecting or eliminating a specific option WITH a reason grounded in the question or context ('B is correct because the passage names the hypothalamus').
+- factual: stating the specific recalled entity/value that answers the question ('The capital is Canberra').
+- multihop: a concrete linking fact that connects sources toward the answer ('The album re-recorded "I Will Always Love You"').
+- extractive: naming the specific span from the context that answers the question.
+
+PURE FILLER (removable) — contains none of the above, only:
+- numbering/bullet artifacts ('1.', '-');
+- restatement of the problem or options ('We need to find the gland', "The options are A through E");
+- intent/goal statements ('Let me think', "Let's evaluate each choice", 'Now I will recall the album');
+- generic meta-commentary ('This is a standard question').
+
+STRICT CONDITIONS — all must hold:
+1. The candidate unit is pure filler.
+2. The unit at removed_end_index+1 is real reasoning for its family (above), NOT another goal/intent/restatement.
+3. Removing the span leaves the reasoning coherent.
+
+If the next unit is itself a goal/intent statement, set has_removal=false.
+
+Question:
+{question}
+
+Current context:
+{context}
+
+Reasoning units:
+{reasoning_units}
+
+Return only JSON: has_removal (bool), removed_start_index (int), removed_end_index (int), reason (string), can_continue_after_skip (bool).
+Set can_continue_after_skip=true only when the unit at removed_end_index+1 is real reasoning for its family — never a goal, intent, or restatement.

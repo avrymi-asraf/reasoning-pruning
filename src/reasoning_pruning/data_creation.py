@@ -366,9 +366,32 @@ def _load_local_questions(path: Path, question_field: str) -> list[str]:
 
 
 def _extract_question(row: dict[str, Any], question_field: str) -> str:
+    if "input_mode" in row:
+        return format_spectrum_question(row)
     if question_field not in row:
         raise ValueError(f"missing {question_field} field in HF dataset row")
     return str(row[question_field]).strip()
+
+
+def format_spectrum_question(row: dict[str, Any]) -> str:
+    """Assemble the full prompt body for an `avreymi/reasoning-spectrum-qa` row.
+
+    Many rows are unanswerable from `question` alone: commonsense/multiple-choice
+    rows need their `choices`, and multihop/extractive rows need their `context`.
+    Only `context`, `question`, and `choices` may reach G — the answer fields
+    (`gold_answer`, `gold_answer_label`, `reference_solution`, `supporting_facts`)
+    must never leak into the prompt, or every derived training row is corrupted.
+    """
+    parts: list[str] = []
+    context = (row.get("context") or "").strip()
+    if context:
+        parts.append(context)
+    parts.append(str(row["question"]).strip())
+    choices = row.get("choices")
+    if choices:
+        options = "\n".join(f"({choice['label']}) {choice['text']}" for choice in choices)
+        parts.append("Options:\n" + options)
+    return "\n\n".join(parts)
 
 
 def _limited(questions: list[str], limit: int | None) -> list[str]:
