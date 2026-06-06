@@ -214,10 +214,20 @@ secrets, then run cells top-to-bottom. The notebook:
 `build_rows_for_question` is the right entry point for the playground — it is the
 same function `build_pt_dataset` calls internally, now exposed as a public API.
 
-**Iterating D prompts:** add a new `prompts/<version>.txt`, change the `prompt_version`
-argument in the D init cell to its stem, and re-run the build cells. Compare the
-removal rate and the emitted `input_x → target_y` rows across versions. The current
-prompt is `conservative-skip-v1`; the only other knob is the wording in `prompts/`.
+**Iterating D prompts (three dedicated cells, no extra deps):**
+1. *List / view* — `list_prompts()` shows every `prompts/*.txt`; `show_prompt("<stem>")`
+   prints one inline.
+2. *Write / edit* — set `PROMPT_NAME` + `PROMPT_TEXT` to create a new version (or
+   overwrite an existing file with `OVERWRITE = True`); the cell writes `prompts/<name>.txt`.
+   Only `{prompt_version} {question} {context} {reasoning_units}` may be single braces.
+3. *Choose* — set `PROMPT_VERSION`; the cell overrides `config.decision["prompt_version"]`
+   and rebuilds D via `create_decision_model_from_config(config.decision, config.pruning,
+   prompts_dir=PROMPTS_DIR)` — the production path. D therefore uses the **model from
+   `config.decision`** (`gemini-3.1-flash-lite`), not a hardcoded model, and runs at
+   `config.pruning` temperature `0.0` for fair comparison.
+
+Re-run the build cells to compare removal rate and emitted `input_x → target_y` rows
+across versions.
 
 **Notebook alignment:** the notebook calls production library functions directly with no
 wrappers. When public signatures in `data_creation.py` or `clients.py` change, or when
