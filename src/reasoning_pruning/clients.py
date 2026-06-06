@@ -20,6 +20,47 @@ from reasoning_pruning.data_creation import GeneratedTrace, PruningDecision
 
 GeminiTransport = Callable[[str, dict[str, Any]], dict[str, Any]]
 
+PRUNING_DECISION_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "has_removal": {
+            "type": "boolean",
+            "description": "Whether a safe removable span exists.",
+        },
+        "removed_start_index": {
+            "type": ["integer", "null"],
+            "description": "Inclusive start index of the removable span, or null when no span exists.",
+        },
+        "removed_end_index": {
+            "type": ["integer", "null"],
+            "description": "Inclusive end index of the removable span, or null when no span exists.",
+        },
+        "reason": {
+            "type": "string",
+            "description": "Brief justification for the pruning decision.",
+        },
+        "can_continue_after_skip": {
+            "type": "boolean",
+            "description": "Whether the unit after the removed span is useful reasoning.",
+        },
+    },
+    "required": [
+        "has_removal",
+        "removed_start_index",
+        "removed_end_index",
+        "reason",
+        "can_continue_after_skip",
+    ],
+    "additionalProperties": False,
+}
+
+
+def gemini_pruning_decision_generation_config(base_config: dict[str, Any]) -> dict[str, Any]:
+    config = dict(base_config)
+    config["response_mime_type"] = "application/json"
+    config["response_json_schema"] = PRUNING_DECISION_JSON_SCHEMA
+    return config
+
 
 class _NewlineStoppingCriteria:
     """Stops generation once max_units newline-terminated reasoning units are complete.
@@ -158,8 +199,7 @@ class GeminiDecisionModel:
     def find_first_removable_span(
         self, *, question: str, context: str, reasoning_units: list[str]
     ) -> PruningDecision:
-        generation_config = dict(self.decision_config)
-        generation_config["responseMimeType"] = "application/json"
+        generation_config = gemini_pruning_decision_generation_config(self.decision_config)
         text = gemini_generate_text(
             model=self.decision_model,
             prompt=format_decision_prompt(
@@ -339,6 +379,7 @@ def _camelize_generation_config(config: dict[str, Any]) -> dict[str, Any]:
         "top_p": "topP",
         "top_k": "topK",
         "response_mime_type": "responseMimeType",
+        "response_json_schema": "responseJsonSchema",
     }
     ignored = {"prompt_version", "conservative", "require_following_step"}
     return {mapping.get(key, key): value for key, value in config.items() if key not in ignored and value is not None}

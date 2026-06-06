@@ -6,12 +6,17 @@ by environment variables. The tests run under uv and validate the canonical
 `input_x -> target_y` contract consumed by training.
 """
 
+import json
 import os
 from pathlib import Path
 
 import pytest
 
-from reasoning_pruning.clients import create_decision_model_from_config, create_generator_from_config
+from reasoning_pruning.clients import (
+    GeminiDecisionModel,
+    create_decision_model_from_config,
+    create_generator_from_config,
+)
 from reasoning_pruning.data_creation import (
     DataCreationConfig,
     GeneratedTrace,
@@ -125,6 +130,65 @@ def test_data_creation_config_loads_current_yaml():
     config = load_data_creation_config(Path("configs/data/dataset_builder_gsm8k_100_gemma4.yaml"))
     assert config.round_id == "gsm8k-gemma4-100-r2"
     assert config.generator["model_id"] == "avreymi/gemma-4-E2B-it-reasoning-pruning"
+
+
+def test_gemini_decision_model_uses_structured_json_schema(monkeypatch):
+    captured = {}
+
+    def _transport(url, body):
+        captured["body"] = body
+        return {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {
+                                "text": json.dumps(
+                                    {
+                                        "has_removal": True,
+                                        "removed_start_index": 0,
+                                        "removed_end_index": 0,
+                                        "reason": "The first unit is filler.",
+                                        "can_continue_after_skip": True,
+                                    }
+                                )
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    decision_model = GeminiDecisionModel(
+        decision_model="gemini-test",
+        decision_config={"temperature": 0.0, "max_output_tokens": 128},
+        transport=_transport,
+    )
+
+    decision = decision_model.find_first_removable_span(
+        question="What is 2 + 3?",
+        context="Question:\nWhat is 2 + 3?",
+        reasoning_units=["We need to solve it.", "2 + 3 = 5."],
+    )
+
+    generation_config = captured["body"]["generationConfig"]
+    schema = generation_config["responseJsonSchema"]
+    assert generation_config["responseMimeType"] == "application/json"
+    assert schema["type"] == "object"
+    assert set(schema["required"]) == {
+        "has_removal",
+        "removed_start_index",
+        "removed_end_index",
+        "reason",
+        "can_continue_after_skip",
+    }
+    assert generation_config["temperature"] == 0.0
+    assert generation_config["maxOutputTokens"] == 128
+    assert decision.has_removal is True
+    assert decision.removed_start_index == 0
+    assert decision.removed_end_index == 0
+    assert decision.can_continue_after_skip is True
 
 
 @pytest.mark.skipif(
