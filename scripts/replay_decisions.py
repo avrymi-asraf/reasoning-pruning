@@ -18,7 +18,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from reasoning_pruning.cli import load_env_file
-from reasoning_pruning.clients import gemini_generate_text, parse_json_pruning_decision
+from reasoning_pruning.clients import (
+    gemini_generate_text,
+    gemini_pruning_decision_generation_config,
+    parse_json_pruning_decision,
+)
 
 DIVIDER = "─" * 60
 HUB_REPO = "avreymi/reasoning-traces-gemma4-100"
@@ -110,7 +114,7 @@ def main() -> None:
         raw = gemini_generate_text(
             model=args.model,
             prompt=_format_prompt(template, prompt_version, trace),
-            generation_config={"responseMimeType": "application/json", "temperature": 0.0},
+            generation_config=gemini_pruning_decision_generation_config({"temperature": 0.0}),
             api_key_env="GEMINI_API_KEY",
             transport=None,
         )
