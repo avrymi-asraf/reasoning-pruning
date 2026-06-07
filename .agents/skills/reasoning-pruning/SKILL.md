@@ -53,6 +53,7 @@ Important modules after the data-creation simplification:
 - `data_creation.py`: the whole automatic data-creation core. It loads dataset-builder YAML, reads local/HF questions, defines `GeneratedTrace` and `PruningDecision`, splits reasoning units, builds canonical rows, advances context, converts rows to prompt/completion, and publishes canonical/training configs to the Hub.
 - `clients.py`: model boundaries for G and D. It supports Transformers and Gemini generators plus Transformers/Gemini JSON decision models, prompt loading, Gemini REST transport, and JSON decision parsing.
 - `cli.py`: local CLI wiring for `build-dataset` and `inspect-dataset`; it loads `.env`, builds clients from config, calls `data_creation.build_pt_dataset`, and optionally publishes.
+- `qualitative_inspection.py` plus `scripts/qualitative_pruning_inspection.py`: shared human-inspection loop and CLI that print the original question, context, G trace, units, D decision, removed span, target, final row, and next context. Use this after structural changes to verify the pipeline still makes semantic sense, not just that tests pass.
 - `training_config.py`: loads only training YAML from `configs/train/`
   (e.g. `configs/train/training_gemma4_gsm8k_100.yaml`).
 - `model_registry.py`: builds accepted-checkpoint lineage/model-card records.
@@ -188,6 +189,23 @@ Load the model with `torch_dtype=torch.bfloat16` and `device_map="auto"` to fit 
 The `build-dataset --dry-run` CLI command and `inspect-dataset` command only work with
 configs that use a Gemini or local-file generator, not `transformers` provider, because
 Gemma-4-E2B-it can't be loaded locally without a GPU.
+
+## Qualitative inspection for pipeline sanity
+
+When changing the data-creation structure, public loop signatures, client constructors,
+unit splitting, D prompt contract, or context-advance behavior, do not rely only on
+quantitative/unit tests. Run the qualitative inspection path and read the printed flow:
+
+```bash
+uv run python scripts/qualitative_pruning_inspection.py \
+  --config configs/data/qualitative_inspection_gemma4_api.yaml \
+  --question-index 3 --max-depth 2 --max-retries 2
+```
+
+The qualitative config uses hosted `gemma-4-26b-a4b-it` as a cheap Gemma-family proxy
+G. It is for inspection only; never publish/train rows from it because production
+self-distillation must use the current fine-tuned G. Keep the notebook inspection cell
+calling the same shared helper so script and notebook output remain uniform.
 
 ## Full multi-depth playground (Google Colab) — the D-prompt playground
 
