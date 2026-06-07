@@ -202,6 +202,34 @@ scripts/reasoning_pruning_cli.py build-dataset / inspect-dataset
 
 Publishing is part of `data_creation.py` too: `push_pt_dataset_to_hub(...)` turns rows into a `canonical` config and a `training` config in the same HF dataset repo.
 
+## Qualitative inspection — required when the pipeline shape changes
+
+Normal tests prove the code still runs; they do not prove the pruning data makes sense. Any change to the data-creation structure, public loop functions, unit splitting, prompt contract, client wiring, or context-advance logic must be checked with the qualitative inspection path before treating the change as safe. The goal is to inspect whether G, D, the selected removable span, `target_y`, and the next context still match the project contract.
+
+The shared inspection entry point is `run_qualitative_pruning_inspection(...)` in `src/reasoning_pruning/qualitative_inspection.py`. It intentionally mirrors the production loop but prints each stage:
+
+- original question;
+- context before generation;
+- G's generated reasoning trace;
+- split reasoning units with indices;
+- D's pruning decision;
+- removed sentence/span;
+- selected target sentence copied from G;
+- final `input_x -> target_y` training row;
+- next context used for the following depth.
+
+Run it from the command line for quick checks:
+
+```bash
+uv run python scripts/qualitative_pruning_inspection.py \
+    --config configs/data/qualitative_inspection_gemma4_api.yaml \
+    --question-index 3 --max-depth 2 --max-retries 2
+```
+
+`configs/data/qualitative_inspection_gemma4_api.yaml` uses hosted `gemma-4-26b-a4b-it` through the Gemini API as a cheap Gemma-family proxy G. This config is **only** for qualitative inspection; do not publish or train from its rows because G is not the active fine-tuned self-distillation model. Production dataset creation must still use the current fine-tuned G, currently `avreymi/gemma-4-E2B-it-reasoning-pruning`.
+
+The notebook inspection cell in `notebooks/data_creation_playground.ipynb` must call the same shared helper instead of carrying a separate hand-copied loop. That uniformity is important: when the production loop changes, the script and notebook should show the same fields and preserve the same `input_x + "\n" + target_y` next-context invariant.
+
 ### The core idea — G is always the current fine-tuned model
 
 G must be the most recently trained fine-tuned model from this repo, never the base model after round 1. Self-distillation is iterative:
