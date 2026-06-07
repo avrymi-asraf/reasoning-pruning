@@ -186,6 +186,30 @@ def test_pipeline_returns_empty_when_no_removal_found():
     assert rows == []
 
 
+def test_qualitative_inspection_prints_full_process(capsys):
+    from reasoning_pruning.qualitative_inspection import run_qualitative_pruning_inspection
+
+    rows = run_qualitative_pruning_inspection(
+        question="What is 2 + 3?",
+        generator=_FakeGenerator(),
+        decision_model=_FakeDecisionModel(),
+        config=_config(),
+    )
+
+    output = capsys.readouterr().out
+    assert len(rows) == 1
+    assert "Original question" in output
+    assert "Context before generation" in output
+    assert "G generated reasoning trace" in output
+    assert "Split reasoning units" in output
+    assert "D pruning decision" in output
+    assert "Removed sentence/span" in output
+    assert "Selected target sentence" in output
+    assert "Final input_x -> target_y training row" in output
+    assert "Next context used for following depth" in output
+    assert "2 + 3 = 5." in output
+
+
 def test_split_reasoning_units_numbered_and_sentence_fallback():
     assert split_reasoning_units("1. Add 2 + 3.\n2. The sum is 5.") == ["Add 2 + 3.", "The sum is 5."]
     assert split_reasoning_units("Add 2 + 3. The sum is 5.") == ["Add 2 + 3.", "The sum is 5."]
