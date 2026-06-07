@@ -38,12 +38,13 @@ The automatic loop is:
 1. Load source questions from config. Supported sources are local smoke/test
    files (`txt` or `jsonl`) and Hugging Face Dataset splits using the configured
    question field, split, revision, token, and optional limit.
-2. Ask the current generator model version to generate reasoning for the current pruned context.
-3. Split generated text into reasoning units with the configured strategy.
+2. Ask the current generator model version for a short reasoning batch from the current pruned context.
+3. Split generated text into reasoning units and require 2..`max_units_per_batch` units.
 4. Ask the decision model for the first conservative safe skip.
-5. Build one canonical PT row.
-6. Update the pruned context by keeping useful prefix plus the next useful step.
-7. Repeat until no safe skip, invalid next step, max depth, max examples, or generation failure.
+5. Discard invalid attempts and retry from the unchanged context up to `max_retries_per_depth`.
+6. Build one canonical PT row from the successful attempt only.
+7. Update the pruned context by keeping useful prefix plus the next useful step.
+8. Repeat until retries fail, max depth, max examples, or generation failure.
 
 Keep the detailed walkthrough in `AGENTS.md` and `docs/data_creation.md` in sync with this loop. It is intentionally verbose because future agents need the examples and invariants to avoid corrupting data creation.
 
@@ -52,6 +53,7 @@ Important modules after the data-creation simplification:
 - `data_creation.py`: the whole automatic data-creation core. It loads dataset-builder YAML, reads local/HF questions, defines `GeneratedTrace` and `PruningDecision`, splits reasoning units, builds canonical rows, advances context, converts rows to prompt/completion, and publishes canonical/training configs to the Hub.
 - `clients.py`: model boundaries for G and D. It supports Transformers and Gemini generators plus Transformers/Gemini JSON decision models, prompt loading, Gemini REST transport, and JSON decision parsing.
 - `cli.py`: local CLI wiring for `build-dataset` and `inspect-dataset`; it loads `.env`, builds clients from config, calls `data_creation.build_pt_dataset`, and optionally publishes.
+- `qualitative_inspection.py` plus `scripts/qualitative_pruning_inspection.py`: shared human-inspection loop and CLI that print the original question, context, G trace, units, D decision, removed span, target, final row, and next context. Use this after structural changes to verify the pipeline still makes semantic sense, not just that tests pass.
 - `training_config.py`: loads only training YAML from `configs/train/`
   (e.g. `configs/train/training_gemma4_gsm8k_100.yaml`).
 - `model_registry.py`: builds accepted-checkpoint lineage/model-card records.
@@ -100,7 +102,7 @@ be trained on the resulting rows.
 
 The active generator model is `avreymi/gemma-4-E2B-it-reasoning-pruning`.
 
-Decision prompt quality rule (conservative-skip-v1, updated 2026-05-28):
+Decision prompt quality rule (incremental-skip-v2, updated 2026-06-03):
 
 `can_continue_after_skip=true` requires that the unit at `removed_end_index+1` contains
 ACTUAL computation, a derived fact, or a logical deduction — NOT a goal statement
@@ -109,9 +111,9 @@ filler. The prompt now contains explicit REMOVABLE vs NOT REMOVABLE examples.
 
 Generator prompt rule:
 
-The G prompt explicitly says "write each step as a concrete computation, deduction, or
-fact — do not write goal statements or intent". For instruction-tuned models (ending in
-`-it`), use `apply_chat_template` with a user message.
+The G prompt requests a fixed short batch of numbered steps, one per line, but must not tell
+G which reasoning habits D should prune. For instruction-tuned models (ending in `-it`), use
+`apply_chat_template` with a user message.
 
 No backward compatibility:
 
@@ -121,7 +123,7 @@ shims, re-exports for removed names, or parallel old/new code paths.
 Prompts folder:
 
 Decision-model prompt templates live in `prompts/` as `.txt` files named by
-`prompt_version` (e.g. `prompts/conservative-skip-v1.txt`). The local package
+`prompt_version` (e.g. `prompts/incremental-skip-v2.txt`). The local package
 (`clients.py`) loads from this directory via `load_prompt_template(version,
 prompts_dir)`. The HF Jobs script (`create_dataset_gemma4_job.py`) now uses the
 shared package code instead of embedding a separate prompt constant. To create a
@@ -161,11 +163,10 @@ There is one dataset-builder config in `configs/data/`, using
 
 `create_dataset_gemma4_job.py` installs the package via
 `git+https://github.com/avrymi-asraf/reasoning-pruning.git` in PEP 723 deps, embeds the
-conservative-skip-v1 prompt (prompts/ dir not available on HF Jobs), defaults to the
-reasoning-spectrum-qa r2 config, and supports all source fields as env vars. Pass
-`SOURCE_DATASET`, `SOURCE_SUBSET`, `SOURCE_SPLIT`, `SOURCE_QUESTION_FIELD`,
-`SOURCE_LIMIT`, `HUB_DATASET_ID`, `ROUND_ID`, `MAX_NEW_TOKENS` to override without
-needing the YAML on the server.
+incremental-skip-v2 prompt (prompts/ dir not available on HF Jobs), defaults to GSM8K r2 config,
+and supports all source fields as env vars. Pass `SOURCE_DATASET`, `SOURCE_SUBSET`, `SOURCE_SPLIT`,
+`SOURCE_QUESTION_FIELD`, `SOURCE_LIMIT`, `HUB_DATASET_ID`, `ROUND_ID`, `MAX_NEW_TOKENS` to run
+any of the 4 datasets without needing the YAML on the server.
 
 Current training configs (in `configs/train/`):
 
@@ -188,6 +189,23 @@ Load the model with `torch_dtype=torch.bfloat16` and `device_map="auto"` to fit 
 The `build-dataset --dry-run` CLI command and `inspect-dataset` command only work with
 configs that use a Gemini or local-file generator, not `transformers` provider, because
 Gemma-4-E2B-it can't be loaded locally without a GPU.
+
+## Qualitative inspection for pipeline sanity
+
+When changing the data-creation structure, public loop signatures, client constructors,
+unit splitting, D prompt contract, or context-advance behavior, do not rely only on
+quantitative/unit tests. Run the qualitative inspection path and read the printed flow:
+
+```bash
+uv run python scripts/qualitative_pruning_inspection.py \
+  --config configs/data/qualitative_inspection_gemma4_api.yaml \
+  --question-index 3 --max-depth 2 --max-retries 2
+```
+
+The qualitative config uses hosted `gemma-4-26b-a4b-it` as a cheap Gemma-family proxy
+G. It is for inspection only; never publish/train rows from it because production
+self-distillation must use the current fine-tuned G. Keep the notebook inspection cell
+calling the same shared helper so script and notebook output remain uniform.
 
 ## Full multi-depth playground (Google Colab) — the D-prompt playground
 

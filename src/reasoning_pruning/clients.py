@@ -20,12 +20,73 @@ from reasoning_pruning.data_creation import GeneratedTrace, PruningDecision
 
 GeminiTransport = Callable[[str, dict[str, Any]], dict[str, Any]]
 
+PRUNING_DECISION_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "has_removal": {
+            "type": "boolean",
+            "description": "Whether a safe removable span exists.",
+        },
+        "removed_start_index": {
+            "type": ["integer", "null"],
+            "description": "Inclusive start index of the removable span, or null when no span exists.",
+        },
+        "removed_end_index": {
+            "type": ["integer", "null"],
+            "description": "Inclusive end index of the removable span, or null when no span exists.",
+        },
+        "reason": {
+            "type": "string",
+            "description": "Brief justification for the pruning decision.",
+        },
+        "can_continue_after_skip": {
+            "type": "boolean",
+            "description": "Whether the unit after the removed span is useful reasoning.",
+        },
+    },
+    "required": [
+        "has_removal",
+        "removed_start_index",
+        "removed_end_index",
+        "reason",
+        "can_continue_after_skip",
+    ],
+    "additionalProperties": False,
+}
+
+
+def gemini_pruning_decision_generation_config(base_config: dict[str, Any]) -> dict[str, Any]:
+    config = dict(base_config)
+    config["response_mime_type"] = "application/json"
+    config["response_json_schema"] = PRUNING_DECISION_JSON_SCHEMA
+    return config
+
+
+class _NewlineStoppingCriteria:
+    """Stops generation once max_units newline-terminated reasoning units are complete.
+
+    Counts '\n' characters in the decoded generated text; each newline marks the end
+    of one numbered reasoning step. Fires after the Nth newline so G never starts
+    writing a (N+1)-th unit.
+    """
+
+    def __init__(self, tokenizer: Any, prompt_length: int, max_units: int) -> None:
+        self._tokenizer = tokenizer
+        self._prompt_length = prompt_length
+        self._max_units = max_units
+
+    def __call__(self, input_ids: Any, scores: Any, **kwargs: Any) -> bool:
+        generated_ids = input_ids[0][self._prompt_length :]
+        text = self._tokenizer.decode(generated_ids, skip_special_tokens=True)
+        return text.count("\n") >= self._max_units
+
 
 @dataclass
 class TransformersGenerator:
     source_model: str
     source_model_revision: str | None = None
     generation_config: dict[str, Any] = field(default_factory=dict)
+    max_units_per_batch: int = 2
 
     def __post_init__(self) -> None:
         try:
@@ -50,10 +111,16 @@ class TransformersGenerator:
         )
 
     def generate_reasoning(self, *, question: str, context: str) -> GeneratedTrace:
-        prompt = _generator_prompt(self._tokenizer, context)
+        from transformers import StoppingCriteriaList
+
+        prompt = _generator_prompt(self._tokenizer, context, self.max_units_per_batch)
         inputs = self._tokenizer(prompt, return_tensors="pt").to(self._model.device)
-        output_ids = self._model.generate(**inputs, **self.generation_config)
-        generated_ids = output_ids[0][inputs["input_ids"].shape[-1] :]
+        prompt_length = inputs["input_ids"].shape[-1]
+        stopping_criteria = StoppingCriteriaList(
+            [_NewlineStoppingCriteria(self._tokenizer, prompt_length, self.max_units_per_batch)]
+        )
+        output_ids = self._model.generate(**inputs, **self.generation_config, stopping_criteria=stopping_criteria)
+        generated_ids = output_ids[0][prompt_length:]
         text = self._tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
         return GeneratedTrace(text=text, generation_config=dict(self.generation_config))
 
@@ -63,15 +130,12 @@ class GeminiGenerator:
     source_model: str
     source_model_revision: str | None = None
     generation_config: dict[str, Any] = field(default_factory=dict)
+    max_units_per_batch: int = 2
     api_key_env: str = "GEMINI_API_KEY"
     transport: GeminiTransport | None = None
 
     def generate_reasoning(self, *, question: str, context: str) -> GeneratedTrace:
-        prompt = (
-            f"{context}\n\n"
-            "Continue the reasoning. Write each step as a concrete computation, deduction, "
-            "or fact. Do not write goal statements or intent — compute directly."
-        )
+        prompt = _generator_instruction(context, self.max_units_per_batch)
         text = gemini_generate_text(
             model=self.source_model,
             prompt=prompt,
@@ -87,7 +151,7 @@ class TransformersDecisionModel:
     decision_model: str
     decision_config: dict[str, Any] = field(default_factory=dict)
     revision: str | None = None
-    prompt_version: str = "conservative-skip-v1"
+    prompt_version: str = "incremental-skip-v2"
     prompts_dir: str = "prompts"
 
     def __post_init__(self) -> None:
@@ -124,7 +188,7 @@ class GeminiDecisionModel:
     decision_model: str
     decision_config: dict[str, Any] = field(default_factory=dict)
     revision: str | None = None
-    prompt_version: str = "conservative-skip-v1"
+    prompt_version: str = "incremental-skip-v2"
     prompts_dir: str = "prompts"
     api_key_env: str = "GEMINI_API_KEY"
     transport: GeminiTransport | None = None
@@ -132,8 +196,7 @@ class GeminiDecisionModel:
     def find_first_removable_span(
         self, *, question: str, context: str, reasoning_units: list[str]
     ) -> PruningDecision:
-        generation_config = dict(self.decision_config)
-        generation_config["responseMimeType"] = "application/json"
+        generation_config = gemini_pruning_decision_generation_config(self.decision_config)
         text = gemini_generate_text(
             model=self.decision_model,
             prompt=format_decision_prompt(
@@ -150,19 +213,23 @@ class GeminiDecisionModel:
         return parse_json_pruning_decision(text)
 
 
-def create_generator_from_config(config: dict[str, Any], generation: dict[str, Any]):
+def create_generator_from_config(
+    config: dict[str, Any], generation: dict[str, Any], max_units_per_batch: int = 2
+):
     provider = config.get("provider", "transformers")
     if provider == "transformers":
         return TransformersGenerator(
             source_model=str(config["model_id"]),
             source_model_revision=config.get("revision"),
             generation_config=dict(generation),
+            max_units_per_batch=max_units_per_batch,
         )
     if provider == "gemini":
         return GeminiGenerator(
             source_model=str(config["model_id"]),
             source_model_revision=config.get("revision"),
             generation_config=dict(generation),
+            max_units_per_batch=max_units_per_batch,
             api_key_env=str(config.get("api_key_env", "GEMINI_API_KEY")),
         )
     raise ValueError(f"unsupported generator provider: {provider}")
@@ -172,7 +239,7 @@ def create_decision_model_from_config(
     config: dict[str, Any], pruning: dict[str, Any], prompts_dir: str = "prompts"
 ):
     provider = config.get("provider", "transformers-json")
-    prompt_version = str(config.get("prompt_version", "conservative-skip-v1"))
+    prompt_version = str(config.get("prompt_version", "incremental-skip-v2"))
     decision_config = dict(pruning)
     decision_config["prompt_version"] = prompt_version
 
@@ -273,12 +340,8 @@ def gemini_rest_transport(url: str, body: dict[str, Any]) -> dict[str, Any]:
         raise RuntimeError(f"Gemini API error {exc.code}: {message}") from exc
 
 
-def _generator_prompt(tokenizer: Any, context: str) -> str:
-    content = (
-        f"{context}\n\n"
-        "Continue the reasoning. Write each step as a concrete computation, deduction, "
-        "or fact. Do not write goal statements or intent — compute directly."
-    )
+def _generator_prompt(tokenizer: Any, context: str, max_units: int = 2) -> str:
+    content = _generator_instruction(context, max_units)
     if getattr(tokenizer, "chat_template", None):
         return tokenizer.apply_chat_template(
             [{"role": "user", "content": content}],
@@ -286,6 +349,14 @@ def _generator_prompt(tokenizer: Any, context: str) -> str:
             add_generation_prompt=True,
         )
     return content
+
+
+def _generator_instruction(context: str, max_units: int) -> str:
+    return (
+        f"{context}\n\n"
+        f"Continue the reasoning with exactly {max_units} numbered steps, one step per line. "
+        "Do not write anything outside the numbered steps."
+    )
 
 
 def _extract_gemini_text(response: dict[str, Any]) -> str:
@@ -310,6 +381,7 @@ def _camelize_generation_config(config: dict[str, Any]) -> dict[str, Any]:
         "top_p": "topP",
         "top_k": "topK",
         "response_mime_type": "responseMimeType",
+        "response_json_schema": "responseJsonSchema",
     }
     ignored = {"prompt_version", "conservative", "require_following_step"}
     return {mapping.get(key, key): value for key, value in config.items() if key not in ignored and value is not None}

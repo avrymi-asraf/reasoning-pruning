@@ -42,6 +42,8 @@ class DataCreationConfig:
     max_pruning_depth: int
     max_examples_per_question: int
     unit_split_strategy: str
+    max_retries_per_depth: int
+    max_units_per_batch: int
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,14 @@ class PruningDecisionModel(Protocol):
 HfLoader = Callable[..., Iterable[dict[str, Any]]]
 _NUMBERED_PREFIX_RE = re.compile(r"^\s*(?:[-*]\s+|\d+[\).\s-]+)")
 _SENTENCE_RE = re.compile(r"[^.!?]+[.!?]|[^.!?]+$")
+# Splits a clause at a comma followed by a linking/coordinating word, or at a
+# standalone conjunctive adverb that begins a new independent clause.
+_CLAUSE_SPLIT_RE = re.compile(
+    r",\s*(?=(?:and|but|or|so|yet|nor|because|since|although|while|when|if|unless|until|"
+    r"therefore|however|moreover|furthermore|consequently|thus|hence|then|additionally|also)\b)"
+    r"|(?<=\w)\s+(?=(?:therefore|however|moreover|furthermore|consequently|thus|hence)\b)",
+    re.IGNORECASE,
+)
 
 
 def load_data_creation_config(path: Path) -> DataCreationConfig:
@@ -121,6 +131,8 @@ def load_data_creation_config(path: Path) -> DataCreationConfig:
         max_pruning_depth=int(raw.get("max_pruning_depth", 1)),
         max_examples_per_question=int(raw.get("max_examples_per_question", 1)),
         unit_split_strategy=str(raw.get("unit_split_strategy", "numbered_or_lines")),
+        max_retries_per_depth=_positive_int(raw.get("max_retries_per_depth", 3), "max_retries_per_depth"),
+        max_units_per_batch=_minimum_int(raw.get("max_units_per_batch", 2), "max_units_per_batch", minimum=2),
     )
 
 
@@ -169,6 +181,8 @@ def split_reasoning_units(text: str, *, strategy: str = "numbered_or_lines") -> 
         return [unit for unit in (_clean_unit(line) for line in text.splitlines()) if unit]
     if strategy == "sentences":
         return _split_sentences(text)
+    if strategy == "clauses":
+        return _split_clauses(text)
     raise ValueError(f"unknown reasoning unit split strategy: {strategy}")
 
 
@@ -301,34 +315,44 @@ def build_rows_for_question(
             break
 
         context = format_context(question, accepted_units)
-        trace = generator.generate_reasoning(question=question, context=context)
-        units = split_reasoning_units(trace.text, strategy=config.unit_split_strategy)
-        if len(units) < 2:
-            break
 
-        decision = decision_model.find_first_removable_span(
-            question=question,
-            context=context,
-            reasoning_units=units,
-        )
-        if not decision.valid_for(units):
+        trace_out = None
+        units_out = None
+        decision_out = None
+        attempts = 0
+
+        for _ in range(config.max_retries_per_depth):
+            attempts += 1
+            trace = generator.generate_reasoning(question=question, context=context)
+            units = split_reasoning_units(trace.text, strategy=config.unit_split_strategy)
+            if not 2 <= len(units) <= config.max_units_per_batch:
+                continue
+            decision = decision_model.find_first_removable_span(
+                question=question, context=context, reasoning_units=units
+            )
+            if decision.valid_for(units):
+                trace_out, units_out, decision_out = trace, units, decision
+                break
+
+        if decision_out is None:
             break
 
         row = build_pruning_transition_row(
             question=question,
             context_before_generation=context,
-            generated_trace=trace.text,
-            generated_units=units,
-            decision=decision,
+            generated_trace=trace_out.text,
+            generated_units=units_out,
+            decision=decision_out,
             depth=depth,
             generator_model=generator.source_model,
             round_id=config.round_id,
             generator_model_revision=generator.source_model_revision,
             decision_model=decision_model.decision_model,
         )
+        row["metadata"]["retry_attempts"] = attempts
         rows.append(row)
 
-        accepted_units = advance_context_units(accepted_units, units, decision)
+        accepted_units = advance_context_units(accepted_units, units_out, decision_out)
         assert format_context(question, accepted_units) == f"{row['input_x']}\n{row['target_y']}"
 
     return rows
@@ -396,6 +420,16 @@ def _split_sentences(text: str) -> list[str]:
     return [match.group(0).strip() for match in _SENTENCE_RE.finditer(text) if match.group(0).strip()]
 
 
+def _split_clauses(text: str) -> list[str]:
+    lines = [_clean_unit(line) for line in text.splitlines()]
+    lines = [line for line in lines if line]
+    clauses: list[str] = []
+    for line in lines:
+        parts = [p.strip() for p in _CLAUSE_SPLIT_RE.split(line)]
+        clauses.extend(p for p in parts if p)
+    return clauses
+
+
 def _clean_unit(text: str) -> str:
     return _NUMBERED_PREFIX_RE.sub("", text).strip()
 
@@ -426,6 +460,17 @@ def _mapping(raw: dict[str, Any], key: str, *, default: dict[str, Any] | None = 
 
 def _optional_str(value: Any) -> str | None:
     return None if value is None else str(value)
+
+
+def _positive_int(value: Any, field_name: str) -> int:
+    return _minimum_int(value, field_name, minimum=1)
+
+
+def _minimum_int(value: Any, field_name: str, *, minimum: int) -> int:
+    parsed = int(value)
+    if parsed < minimum:
+        raise ValueError(f"{field_name} must be at least {minimum}")
+    return parsed
 
 
 def _optional_int(value: Any) -> int | None:

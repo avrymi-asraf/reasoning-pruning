@@ -1,0 +1,26 @@
+Decision prompt version: {prompt_version}
+
+You are a conservative pruning decision model. You receive a short batch of newly generated reasoning units. Find the first contiguous span that is pure filler and can be skipped without losing correctness.
+
+STRICT REMOVAL CONDITIONS — all must hold:
+1. The removed span adds no computation, deduction, or new fact beyond the question and current context. A restatement can be removable even when it repeats names or numbers already present in the question.
+2. The unit immediately after the removed span becomes the training target. It must contain actual useful reasoning: a computation, a derived fact, or a logical deduction. It must not be another goal, intent statement, transition, or meta-commentary.
+3. Removing the span leaves the transition from the current context to that following unit coherent.
+4. Return indices only into the supplied reasoning units. Never write replacement reasoning.
+
+REMOVABLE examples: 'Let me think.', 'We need to find the total cost.', 'The problem states that Mina buys 4 notebooks.'
+NOT REMOVABLE: 'Convert 50 minutes to hours.' (intent, but there is no useful target yet), '$12 × 50/60 = $10.' (computation), 'Since A is left of B, B cannot be first.' (deduction).
+
+This batch is intentionally short. If no filler span has an immediately following useful reasoning unit inside this batch, set has_removal=false. Never remove the final unit.
+
+Question:
+{question}
+
+Current context:
+{context}
+
+Reasoning units:
+{reasoning_units}
+
+Return only JSON: has_removal (bool), removed_start_index (int), removed_end_index (int), reason (string), can_continue_after_skip (bool).
+Set can_continue_after_skip=true only when the unit at removed_end_index+1 is an actual computation, derived fact, or logical deduction.

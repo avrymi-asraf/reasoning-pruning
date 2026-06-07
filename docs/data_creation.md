@@ -33,9 +33,16 @@ For one question at depth `d`:
 
 ```python
 context = format_context(question, accepted_units)
-trace = G.generate_reasoning(question=question, context=context)
-generated_units = split_reasoning_units(trace.text)
-decision = D.find_first_removable_span(question, context, generated_units)
+for retry_attempts in range(1, max_retries_per_depth + 1):
+    trace = G.generate_reasoning(question=question, context=context)
+    generated_units = split_reasoning_units(trace.text)
+    if not 2 <= len(generated_units) <= max_units_per_batch:
+        continue
+    decision = D.find_first_removable_span(question, context, generated_units)
+    if decision.valid_for(generated_units):
+        break
+else:
+    stop_this_question()
 
 start = decision.removed_start_index
 end = decision.removed_end_index
@@ -182,16 +189,46 @@ scripts/reasoning_pruning_cli.py build-dataset / inspect-dataset
               │  for each question and depth:
               │
               ├── format_context(question, accepted_units)
-              ├── G.generate_reasoning(question=question, context=context)
-              ├── split_reasoning_units(trace.text, strategy=config.unit_split_strategy)
-              ├── D.find_first_removable_span(question, context, generated_units)
-              ├── decision.valid_for(generated_units)
-              ├── build_pruning_transition_row(...)
+              ├── retry from the same context up to max_retries_per_depth:
+              │     ├── G.generate_reasoning(question=question, context=context)
+              │     ├── split_reasoning_units(trace.text, strategy=config.unit_split_strategy)
+              │     ├── require 2..max_units_per_batch units
+              │     ├── D.find_first_removable_span(question, context, generated_units)
+              │     └── discard the attempt unless decision.valid_for(generated_units)
+              ├── build_pruning_transition_row(...) from the successful attempt only
               ├── advance_context_units(accepted_units, generated_units, decision)
-              └── repeat until no valid skip or limits stop the loop
+              └── repeat until retries fail or limits stop the loop
 ```
 
 Publishing is part of `data_creation.py` too: `push_pt_dataset_to_hub(...)` turns rows into a `canonical` config and a `training` config in the same HF dataset repo.
+
+## Qualitative inspection — required when the pipeline shape changes
+
+Normal tests prove the code still runs; they do not prove the pruning data makes sense. Any change to the data-creation structure, public loop functions, unit splitting, prompt contract, client wiring, or context-advance logic must be checked with the qualitative inspection path before treating the change as safe. The goal is to inspect whether G, D, the selected removable span, `target_y`, and the next context still match the project contract.
+
+The shared inspection entry point is `run_qualitative_pruning_inspection(...)` in `src/reasoning_pruning/qualitative_inspection.py`. It intentionally mirrors the production loop but prints each stage:
+
+- original question;
+- context before generation;
+- G's generated reasoning trace;
+- split reasoning units with indices;
+- D's pruning decision;
+- removed sentence/span;
+- selected target sentence copied from G;
+- final `input_x -> target_y` training row;
+- next context used for the following depth.
+
+Run it from the command line for quick checks:
+
+```bash
+uv run python scripts/qualitative_pruning_inspection.py \
+    --config configs/data/qualitative_inspection_gemma4_api.yaml \
+    --question-index 3 --max-depth 2 --max-retries 2
+```
+
+`configs/data/qualitative_inspection_gemma4_api.yaml` uses hosted `gemma-4-26b-a4b-it` through the Gemini API as a cheap Gemma-family proxy G. This config is **only** for qualitative inspection; do not publish or train from its rows because G is not the active fine-tuned self-distillation model. Production dataset creation must still use the current fine-tuned G, currently `avreymi/gemma-4-E2B-it-reasoning-pruning`.
+
+The notebook inspection cell in `notebooks/data_creation_playground.ipynb` must call the same shared helper instead of carrying a separate hand-copied loop. That uniformity is important: when the production loop changes, the script and notebook should show the same fields and preserve the same `input_x + "\n" + target_y` next-context invariant.
 
 ### The core idea — G is always the current fine-tuned model
 
@@ -246,9 +283,11 @@ This context is exactly what G sees when it is asked to continue reasoning.
 
 #### 3. Ask G to generate reasoning
 
-`src/reasoning_pruning/clients.py` creates the configured generator client. The generator receives the current context and an instruction to continue with concrete computations, deductions, or facts instead of goal statements.
+`src/reasoning_pruning/clients.py` creates the configured generator client. The generator receives the current context and an instruction to write a short batch of numbered reasoning units, bounded by `max_units_per_batch` and `generation.max_new_tokens`, without telling G which reasoning habits D should prune. Transformers generation stops live after the configured number of newline-terminated units; Gemini relies on the prompt and token budget.
 
-Example raw trace from G:
+Each depth retries from the exact same clean context up to `max_retries_per_depth`. Attempts with too few or too many units, or with no valid D decision, are discarded completely and never enter a row or the accepted context.
+
+Example raw trace from a successful G attempt:
 
 ```text
 1. We need to find the total cost.

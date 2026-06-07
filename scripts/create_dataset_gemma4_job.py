@@ -38,21 +38,22 @@ from reasoning_pruning.data_creation import (
     push_pt_dataset_to_hub,
 )
 
-# Embed conservative-skip-v1 so the jobs server doesn't need the prompts/ directory.
-_CONSERVATIVE_SKIP_V1 = """\
+# Embed incremental-skip-v2 so the jobs server doesn't need the prompts/ directory.
+_INCREMENTAL_SKIP_V2 = """\
 Decision prompt version: {prompt_version}
 
-You are a conservative pruning decision model. Your job: find the first reasoning unit that is pure filler and can be removed without any loss of correctness.
+You are a conservative pruning decision model. You receive a short batch of newly generated reasoning units. Find the first contiguous span that is pure filler and can be skipped without losing correctness.
 
 STRICT REMOVAL CONDITIONS — all must hold:
-1. The unit contains NO computation, NO numeric value, NO logical deduction, and NO new fact. It is pure filler (e.g. a numbering artifact, a commentary, a restatement of the problem, or a statement of intent).
-2. The unit at index removed_end_index+1 — which becomes the training target — contains ACTUAL reasoning: a numeric computation, a derived fact, or a logical deduction. It must NOT be another goal/intent statement ('Determine X', 'We need to find Y', 'Calculate Z', 'Convert A to B').
-3. Removing the span leaves the reasoning coherent.
+1. The removed span adds no computation, deduction, or new fact beyond the question and current context. A restatement can be removable even when it repeats names or numbers already present in the question.
+2. The unit immediately after the removed span becomes the training target. It must contain actual useful reasoning: a computation, a derived fact, or a logical deduction. It must not be another goal, intent statement, transition, or meta-commentary.
+3. Removing the span leaves the transition from the current context to that following unit coherent.
+4. Return indices only into the supplied reasoning units. Never write replacement reasoning.
 
-REMOVABLE examples: '1.' (bare numbering), 'Let me think.' (filler), 'This follows the standard approach.' (commentary).
-NOT REMOVABLE: 'Convert 50 minutes to hours.' (goal statement — not a computation), 'Determine the rate per minute.' (intent, not math), '$12 × 50/60 = $10.' (actual computation — keep it), '50/60 = 5/6 hours.' (actual math — keep it).
+REMOVABLE examples: 'Let me think.', 'We need to find the total cost.', 'The problem states that Mina buys 4 notebooks.'
+NOT REMOVABLE: 'Convert 50 minutes to hours.' (intent, but there is no useful target yet), '$12 × 50/60 = $10.' (computation), 'Since A is left of B, B cannot be first.' (deduction).
 
-If the next unit after the candidate removal is itself a goal/intent statement, set has_removal=false.
+This batch is intentionally short. If no filler span has an immediately following useful reasoning unit inside this batch, set has_removal=false. Never remove the final unit.
 
 Question:
 {question}
@@ -64,7 +65,7 @@ Reasoning units:
 {reasoning_units}
 
 Return only JSON: has_removal (bool), removed_start_index (int), removed_end_index (int), reason (string), can_continue_after_skip (bool).
-Set can_continue_after_skip=true only when the unit at removed_end_index+1 contains actual math, logic, or a concrete fact — never a goal or intent statement.
+Set can_continue_after_skip=true only when the unit at removed_end_index+1 is an actual computation, derived fact, or logical deduction.
 """
 
 # Default config: reasoning-spectrum-qa, round 2 (avreymi/gemma-4-E2B-it-reasoning-pruning as G).
@@ -87,13 +88,15 @@ _DEFAULT_CONFIG = dict(
         "provider": "gemini-json",
         "model_id": "gemini-3.1-flash-lite",
         "api_key_env": "GEMINI_API_KEY",
-        "prompt_version": "conservative-skip-v1",
+        "prompt_version": "incremental-skip-v2",
     },
-    generation={"max_new_tokens": 512, "temperature": 0.7, "do_sample": True},
+    generation={"max_new_tokens": 100, "temperature": 0.7, "do_sample": True},
     pruning={"conservative": True, "require_following_step": True, "max_output_tokens": 256, "temperature": 0.0},
     max_pruning_depth=1,
     max_examples_per_question=1,
     unit_split_strategy="numbered_or_lines",
+    max_retries_per_depth=3,
+    max_units_per_batch=2,
 )
 
 
@@ -112,9 +115,9 @@ def main() -> int:
     questions = load_questions(config, hf_token=os.environ.get("HF_TOKEN"))
 
     print(f"Loading generator: {config.generator['model_id']}")
-    generator = create_generator_from_config(config.generator, config.generation)
+    generator = create_generator_from_config(config.generator, config.generation, max_units_per_batch=config.max_units_per_batch)
 
-    prompt_version = config.decision.get("prompt_version", "conservative-skip-v1")
+    prompt_version = config.decision.get("prompt_version", "incremental-skip-v2")
     prompts_dir = _write_embedded_prompt(prompt_version)
     decision_model = create_decision_model_from_config(config.decision, config.pruning, prompts_dir=prompts_dir)
 
@@ -141,7 +144,7 @@ def main() -> int:
 def _write_embedded_prompt(prompt_version: str) -> str:
     """Write the embedded prompt to a temp directory and return its path."""
     tmpdir = tempfile.mkdtemp()
-    Path(tmpdir, f"{prompt_version}.txt").write_text(_CONSERVATIVE_SKIP_V1)
+    Path(tmpdir, f"{prompt_version}.txt").write_text(_INCREMENTAL_SKIP_V2)
     return tmpdir
 
 
@@ -181,6 +184,8 @@ def _apply_env_overrides(config: DataCreationConfig) -> DataCreationConfig:
         max_examples_per_question=int(
             os.environ.get("MAX_EXAMPLES_PER_QUESTION", config.max_examples_per_question)
         ),
+        max_retries_per_depth=int(os.environ.get("MAX_RETRIES_PER_DEPTH", config.max_retries_per_depth)),
+        max_units_per_batch=int(os.environ.get("MAX_UNITS_PER_BATCH", config.max_units_per_batch)),
         generator=generator,
         decision=decision,
         generation=generation,

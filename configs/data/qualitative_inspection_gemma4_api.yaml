@@ -1,0 +1,44 @@
+# Qualitative inspection only: this config uses hosted Gemma as a cheap proxy G.
+# Do not publish or train from these rows because G is not the active fine-tuned
+# self-distillation model. Google documents Gemma API access as an alternative
+# to hosting local Gemma, and HF Inference Providers are a fallback for hosted
+# Gemma models when this repo adds an HF provider client.
+round_id: qualitative-gemma4-api
+source_type: hf_dataset
+source_dataset: avreymi/reasoning-spectrum-qa
+source_dataset_revision: main
+source_questions_path: null
+source_subset: null
+source_split: data
+source_question_field: question
+source_limit: 5
+code_version: local-qualitative-inspection
+hub_dataset_id: local/qualitative-inspection-do-not-publish
+private: true
+
+generator:
+  provider: gemini
+  model_id: gemma-4-26b-a4b-it
+  api_key_env: GEMINI_API_KEY
+
+decision:
+  provider: gemini-json
+  model_id: gemini-3.1-flash-lite
+  api_key_env: GEMINI_API_KEY
+  prompt_version: conservative-skip-v1
+
+generation:
+  max_output_tokens: 256
+  temperature: 0.7
+
+pruning:
+  conservative: true
+  require_following_step: true
+  max_output_tokens: 256
+  temperature: 0.0
+
+max_pruning_depth: 2
+max_examples_per_question: 2
+unit_split_strategy: numbered_or_lines
+max_retries_per_depth: 2
+max_units_per_batch: 3

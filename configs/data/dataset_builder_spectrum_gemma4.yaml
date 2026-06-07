@@ -38,6 +38,6 @@ pruning:
   max_output_tokens: 256
   temperature: 0.0
 
-max_pruning_depth: 1
+max_pruning_depth: 3
 max_examples_per_question: 1
-unit_split_strategy: numbered_or_lines
+unit_split_strategy: clauses
