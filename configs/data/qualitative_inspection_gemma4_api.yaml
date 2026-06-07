@@ -39,6 +39,6 @@ pruning:
 
 max_pruning_depth: 2
 max_examples_per_question: 2
-unit_split_strategy: numbered_or_lines
-max_retries_per_depth: 2
-max_units_per_batch: 3
+unit_split_strategy: clauses
+max_retries_per_depth: 3
+max_units_per_batch: 20

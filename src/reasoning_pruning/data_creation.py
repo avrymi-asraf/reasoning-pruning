@@ -90,12 +90,13 @@ class PruningDecisionModel(Protocol):
 HfLoader = Callable[..., Iterable[dict[str, Any]]]
 _NUMBERED_PREFIX_RE = re.compile(r"^\s*(?:[-*]\s+|\d+[\).\s-]+)")
 _SENTENCE_RE = re.compile(r"[^.!?]+[.!?]|[^.!?]+$")
-# Splits a clause at a comma followed by a linking/coordinating word, or at a
-# standalone conjunctive adverb that begins a new independent clause.
+# Two-tier clause splitting:
+# - Subordinating conjunctions split with or without a preceding comma.
+# - Conjunctive adverbs require a preceding comma (without one they modify the verb, not a new clause).
 _CLAUSE_SPLIT_RE = re.compile(
-    r",\s*(?=(?:and|but|or|so|yet|nor|because|since|although|while|when|if|unless|until|"
-    r"therefore|however|moreover|furthermore|consequently|thus|hence|then|additionally|also)\b)"
-    r"|(?<=\w)\s+(?=(?:therefore|however|moreover|furthermore|consequently|thus|hence)\b)",
+    r"(?:,\s*|\s+)(?=(?:but|so|yet|nor|because|since|although|when|if|unless|until)\b)"
+    r"|,\s*(?=(?:and|or|while|as|therefore|however|moreover|furthermore|consequently|thus|hence|then|"
+    r"additionally|also|alternatively|similarly|conversely|meanwhile|instead)\b)",
     re.IGNORECASE,
 )
 
