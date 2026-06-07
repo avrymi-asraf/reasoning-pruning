@@ -90,6 +90,14 @@ class PruningDecisionModel(Protocol):
 HfLoader = Callable[..., Iterable[dict[str, Any]]]
 _NUMBERED_PREFIX_RE = re.compile(r"^\s*(?:[-*]\s+|\d+[\).\s-]+)")
 _SENTENCE_RE = re.compile(r"[^.!?]+[.!?]|[^.!?]+$")
+# Splits a clause at a comma followed by a linking/coordinating word, or at a
+# standalone conjunctive adverb that begins a new independent clause.
+_CLAUSE_SPLIT_RE = re.compile(
+    r",\s*(?=(?:and|but|or|so|yet|nor|because|since|although|while|when|if|unless|until|"
+    r"therefore|however|moreover|furthermore|consequently|thus|hence|then|additionally|also)\b)"
+    r"|(?<=\w)\s+(?=(?:therefore|however|moreover|furthermore|consequently|thus|hence)\b)",
+    re.IGNORECASE,
+)
 
 
 def load_data_creation_config(path: Path) -> DataCreationConfig:
@@ -173,6 +181,8 @@ def split_reasoning_units(text: str, *, strategy: str = "numbered_or_lines") -> 
         return [unit for unit in (_clean_unit(line) for line in text.splitlines()) if unit]
     if strategy == "sentences":
         return _split_sentences(text)
+    if strategy == "clauses":
+        return _split_clauses(text)
     raise ValueError(f"unknown reasoning unit split strategy: {strategy}")
 
 
@@ -408,6 +418,16 @@ def _default_hf_loader() -> HfLoader:
 
 def _split_sentences(text: str) -> list[str]:
     return [match.group(0).strip() for match in _SENTENCE_RE.finditer(text) if match.group(0).strip()]
+
+
+def _split_clauses(text: str) -> list[str]:
+    lines = [_clean_unit(line) for line in text.splitlines()]
+    lines = [line for line in lines if line]
+    clauses: list[str] = []
+    for line in lines:
+        parts = [p.strip() for p in _CLAUSE_SPLIT_RE.split(line)]
+        clauses.extend(p for p in parts if p)
+    return clauses
 
 
 def _clean_unit(text: str) -> str:

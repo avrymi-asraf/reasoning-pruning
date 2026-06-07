@@ -32,13 +32,40 @@ The idea of this project is to train a model to pruning-reasening-traces that it
 to do this, I want to determine a seed, so when we make train the model, is on the same seed. is this possible?
 
 
-# pruning data as learning 
-in this stage it semms that the pruning data is not so good. especially in gamma. it think ok, we don't find so  match what to imporve. I want use pruning data as learning. it means - tell the agent how to use a tool, make it complicated. we assume the agent need a reasoning trace to use the tool. step by step, even if the reasoning is sence remove the reasoning and teach the agent to use it automatically. we need to find a dataset about tools. with skills ect. then try this.
-it also mean that we need My goal now is to remove one sentence at a time, meaning I have to tell it to find the first sentence that is the least necessary.
-I don't want to get to a situation where the model tells me - all sentences are necessary. That is, from every reasoning trace I expect us to remove some sentence.
 
-# Use a qualitative test rather
-instead of runing the test, create file that print every step, we can see how it looks and make better decisions about what we need to do. this is the tests I need in this project.
+# Pruning Data as Learning
+
+At this stage, the pruning data does not seem good enough, especially for Gemma. The current setup often does not find much useful reasoning to improve or remove.
+
+I want to reframe pruning data as a way to teach the model learned tool use. The idea is to give the agent a complicated task that requires using a tool or skill step by step. We assume the agent initially needs an explicit reasoning trace to use the tool correctly. Then we remove parts of that reasoning trace one sentence at a time, so the model learns to perform the tool-use behavior more automatically.
+
+For this, we need to find or create a dataset focused on tool use, skills, or agent workflows, and then test the pruning method on that kind of data.
+
+My current goal is to remove exactly one sentence at a time. The decision model should find the first sentence in the reasoning trace that is least necessary. I do not want the model to answer that all sentences are necessary. For every reasoning trace, I expect the decision model to identify at least one sentence that can be removed while still preserving the ability to continue correctly.
+
+# Use Qualitative Tests Instead of Only Quantitative Tests
+
+At this stage, the most important test for this project is not a normal pass/fail unit test. We need a qualitative inspection test: a script or notebook-style file that runs the full pruning-data process and prints every step clearly.
+
+The goal is to see how the process actually behaves, not only whether the code runs. We should be able to inspect:
+
+- the original question;
+- the context before generation;
+- G's generated reasoning trace;
+- the split reasoning units;
+- D's pruning decision;
+- the removed sentence;
+- the selected target sentence;
+- the final `input_x -> target_y` training row;
+- the next context used for the following depth.
+
+This will let us decide whether the data creation process is good, whether the prompt is working, and whether each step matches what we expect.
+
+The problem is that we cannot use the real G model from the repo for this kind of frequent qualitative testing, because it is too expensive to run. Instead, we need to find a cheaper model that is similar enough to G for inspection purposes. For example, there may be a way to run `gemma-4-E2B-it` or a similar Gemma model through an API from Google or Hugging Face.
+
+The task is to research the best practical option for running a model similar to G, without using the real fine-tuned G model. Then build a qualitative test file that runs the same process we used in the notebook and prints each stage of the pipeline.
+
+This test is important because it helps us evaluate the quality of the pruning process itself. We need to see whether each step is producing what we expect, not just whether the code technically works.
 
 
 # structure results from the D model. - run by codex
@@ -49,3 +76,6 @@ search in the internet what is the best way to do this.
 # simplify the code
 make the code simple, the code need to be modular the functoins need to be simple, clear, and intuative! think about every function how to make it intuitive as possible.
 
+# Change the unit split to be more aggressive.
+If there is a comma, linking words.
+I want a much, much wider division into units, so that the driver has more to download when he needs to.
