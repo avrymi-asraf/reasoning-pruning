@@ -7,16 +7,43 @@ description: Testing philosophy for this project — behavior tests only, no imp
 
 ## The Rule
 
-Tests check that the code **runs correctly and produces the right outcomes**. They do not dictate *how* the code achieves those outcomes.
+Automated tests exist to answer one cheap question: **is everything still wired
+and does the pipeline run end to end after I changed the code?** They do not
+dictate *how* the code works, and they are not where you decide whether the data
+is any good.
 
-## What to test (3–4 tests per feature)
+**The real test is the live qualitative inspection run** (`src/reasoning_pruning/
+qualitative_inspection.py` via `scripts/qualitative_pruning_inspection.py` or the
+notebook). That is where you look at actual G output and ask the questions that
+matter: does G's reasoning make sense? Is the unit split clean? Is D removing
+real filler and picking a real next step? A unit test cannot judge any of that —
+do not try to make it. See the [reasoning-pruning] skill for how to run it.
 
-Test the main behavioral contract of the system:
+> Keep the automated suite very small. A few comprehensive "it runs / it's
+> connected" tests beat a pile of tiny tests that pin down implementation
+> details nobody cares about. If a test would break on a harmless refactor that
+> keeps the same behavior, it is the wrong test — delete it.
 
-- Does the pipeline produce rows with `input_x` and `target_y`?
-- Can those rows be converted to training format?
-- Does the pipeline stop gracefully when no removal is found?
-- Does a live LLM call return a non-empty response?
+## What to test (a few comprehensive tests, total — not per feature)
+
+The behavioral contracts, at the level the caller cares about:
+
+- Does the pipeline produce `input_x -> target_y` rows and convert to training format?
+- Does the next-context invariant hold (`next_context == input_x + "\n" + target_y`)?
+- Does the pipeline stop gracefully / return empty when nothing is prunable?
+- Are bad attempts discarded without polluting the retry context?
+- Does spectrum question assembly never leak answer fields to G?
+- Does a stubbed/live LLM response parse into a usable decision?
+
+## The inspection loop must run the production loop — never a copy
+
+The qualitative inspector must execute `build_rows_for_question` (via the
+`PruningObserver` hook), not a hand-copied parallel loop. We learned this the
+hard way: a copied inspection loop silently drifted (production required ≥3 units
+while the inspection copy still allowed ≥2), so the "most important verification"
+was no longer running what production ran. One loop, an observer for printing —
+that is the only acceptable shape. This matches the project's no-parallel-paths
+rule ([feedback_no_backward_compat]).
 
 ## What NOT to test
 
@@ -47,28 +74,22 @@ Default `uv run pytest` must complete in seconds on any machine, including those
 
 ## Fake models for fast tests
 
-Use simple inline fakes that satisfy the generator/decision-model protocols:
+Shared fakes live in `tests/fakes.py` (`FakeGenerator`, `FakeDecisionModel`,
+`make_config`) and satisfy the generator/decision-model protocols. Import them
+flat (`from fakes import ...`) — pytest's prepend import mode puts `tests/` on
+`sys.path`, so no `__init__.py` is needed. The fake trace has at least 3 units so
+a removal at the front leaves a valid target.
 
-```python
-class _FakeGenerator:
-    source_model = "fake-g"
-    source_model_revision = "v0"
-    def generate_reasoning(self, *, question, context):
-        return GeneratedTrace(text="Step 1. Filler step. Step 3 result.", generation_config={})
+## Test files — split by area, so a change in one part runs its own file
 
-class _FakeDecisionModel:
-    decision_model = "fake-d"
-    def find_first_removable_span(self, *, question, context, reasoning_units):
-        return PruningDecision(has_removal=True, removed_start_index=1, removed_end_index=1,
-                               reason="filler", can_continue_after_skip=True)
-```
+- `tests/test_data_creation.py` — the core pruning loop (valid rows, next-context
+  invariant, empty-when-nothing-prunable, discard-and-retry).
+- `tests/test_question_source.py` — spectrum question assembly never leaks answers.
+- `tests/test_clients.py` — G/D wiring: stubbed Gemini decision parsing + the live
+  gated end-to-end test.
+- `tests/test_qualitative_inspection.py` — smoke that the inspector runs the
+  production loop and returns rows.
+- `tests/fakes.py` — shared fakes (not a test file).
 
-The fake trace must have at least 3 units so the decision to skip index 1 leaves a valid target at index 2.
-
-## Current test file
-
-`tests/test_pipeline.py` — three tests:
-
-1. `test_pipeline_produces_valid_training_rows` — fast, fake models
-2. `test_pipeline_returns_empty_when_no_removal_found` — fast, fake models
-3. `test_live_gemini_pipeline_generates_reasoning_and_produces_rows` — skipped by default
+Do not pile everything back into one file. If you changed only the clients, you
+should be able to run only `tests/test_clients.py`.

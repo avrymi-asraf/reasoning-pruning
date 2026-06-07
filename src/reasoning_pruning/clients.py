@@ -135,6 +135,7 @@ class TransformersGenerator:
 @dataclass
 class GeminiGenerator:
     source_model: str
+    source_model_revision: str | None = None
     generation_config: dict[str, Any] = field(default_factory=dict)
     api_key_env: str = "GEMINI_API_KEY"
     transport: GeminiTransport | None = None

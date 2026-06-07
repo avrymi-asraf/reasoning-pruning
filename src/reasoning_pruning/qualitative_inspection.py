@@ -1,10 +1,12 @@
-"""Print qualitative traces for reasoning-pruning data creation.
+"""Print every stage of reasoning-pruning data creation for human inspection.
 
-This module mirrors the production pruning loop while exposing every local
-transition for human inspection. It connects notebook experiments and script
-runs to the same generator, decision model, and row-building functions used by
-the CLI and HF Jobs paths. It is intended for cheap local/API-backed qualitative
-checks before expensive dataset creation or training jobs.
+This module does NOT reimplement the pruning loop. It runs the production
+`build_rows_for_question` loop with a printing `PruningObserver`, so what a
+human reads here is exactly what the dataset-creation and HF Jobs paths run —
+the two can never drift. It is the real post-change check: after editing the
+pipeline, run it (or the matching notebook cell) and judge whether G's traces,
+the unit split, and D's decisions actually make sense. Intended for cheap
+local/API-backed inspection before expensive dataset creation or training.
 """
 
 from __future__ import annotations
@@ -15,11 +17,9 @@ from reasoning_pruning.data_creation import (
     DataCreationConfig,
     PruningDecision,
     PruningDecisionModel,
+    PruningObserver,
     ReasoningGenerator,
-    advance_context_units,
-    build_pruning_transition_row,
-    format_context,
-    split_reasoning_units,
+    build_rows_for_question,
 )
 
 
@@ -30,84 +30,51 @@ def run_qualitative_pruning_inspection(
     decision_model: PruningDecisionModel,
     config: DataCreationConfig,
 ) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    accepted_units: list[str] = []
+    return build_rows_for_question(
+        question=question,
+        generator=generator,
+        decision_model=decision_model,
+        config=config,
+        observer=_PrintingObserver(),
+    )
 
-    print_section("Original question")
-    print(question)
 
-    for depth in range(config.max_pruning_depth):
-        if len(rows) >= config.max_examples_per_question:
-            break
+class _PrintingObserver(PruningObserver):
+    def start(self, question: str) -> None:
+        print_section("Original question")
+        print(question)
 
-        context = format_context(question, accepted_units)
+    def depth(self, depth: int, context: str) -> None:
         print_section(f"Depth {depth}")
         print_label("Context before generation", context)
 
-        trace_out = None
-        units_out = None
-        decision_out = None
-        attempts = 0
+    def attempt(self, depth: int, attempt: int, trace: str, units: list[str]) -> None:
+        print_section(f"Depth {depth} / attempt {attempt}", marker="-")
+        print_label("G generated reasoning trace", trace)
+        print_units(units)
 
-        for _ in range(config.max_retries_per_depth):
-            attempts += 1
-            trace = generator.generate_reasoning(context=context)
-            units = split_reasoning_units(trace.text, strategy=config.unit_split_strategy)
+    def rejected_unit_count(self, got: int, maximum: int) -> None:
+        print(f"Attempt rejected: expected 3..{maximum} units, got {got}.")
 
-            print_section(f"Depth {depth} / attempt {attempts}", marker="-")
-            print_label("G generated reasoning trace", trace.text)
-            print_units(units)
+    def rejected_no_span(self) -> None:
+        print("Attempt rejected: D found no valid removable span with a following useful unit.")
 
-            if not 2 <= len(units) <= config.max_units_per_batch:
-                print(
-                    "Attempt rejected: "
-                    f"expected 2..{config.max_units_per_batch} units, got {len(units)}."
-                )
-                continue
+    def decision(self, decision: PruningDecision, units: list[str]) -> None:
+        print_decision(decision, units)
 
-            decision = decision_model.find_first_removable_span(
-                question=question,
-                context=context,
-                reasoning_units=units,
-            )
-            print_decision(decision, units)
-
-            if decision.valid_for(units):
-                trace_out, units_out, decision_out = trace, units, decision
-                break
-
-            print("Attempt rejected: D did not return a valid removable span with a following useful unit.")
-
-        if decision_out is None:
-            print_section(f"Stopping after depth {depth}", marker="-")
-            print("No valid pruning transition was found for this depth.")
-            break
-
-        row = build_pruning_transition_row(
-            question=question,
-            context_before_generation=context,
-            generated_trace=trace_out.text,
-            generated_units=units_out,
-            decision=decision_out,
-            depth=depth,
-            generator_model=generator.source_model,
-            round_id=config.round_id,
-            generator_model_revision=generator.source_model_revision,
-            decision_model=decision_model.decision_model,
-        )
-        row["metadata"]["retry_attempts"] = attempts
-        rows.append(row)
-
+    def row(self, row: dict[str, Any]) -> None:
         print_transition_row(row)
-        accepted_units = advance_context_units(accepted_units, units_out, decision_out)
-        next_context = format_context(question, accepted_units)
-        expected_context = f"{row['input_x']}\n{row['target_y']}"
-        assert next_context == expected_context
+
+    def advanced(self, next_context: str) -> None:
         print_label("Next context used for following depth", next_context)
 
-    print_section("Inspection summary")
-    print(f"Created {len(rows)} qualitative training row(s).")
-    return rows
+    def stopped(self, depth: int) -> None:
+        print_section(f"Stopping after depth {depth}", marker="-")
+        print("No valid pruning transition was found for this depth.")
+
+    def done(self, rows: list[dict[str, Any]]) -> None:
+        print_section("Inspection summary")
+        print(f"Created {len(rows)} qualitative training row(s).")
 
 
 def print_section(title: str, *, marker: str = "=") -> None:

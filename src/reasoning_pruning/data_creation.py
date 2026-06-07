@@ -87,6 +87,27 @@ class PruningDecisionModel(Protocol):
         ...
 
 
+class PruningObserver:
+    """No-op view of every stage of the per-question pruning loop.
+
+    `build_rows_for_question` is the single source of truth for the loop. The
+    qualitative inspector subclasses this to print each stage, so what humans
+    read is exactly what data creation runs — never fork the loop body to add
+    logging or a parallel inspection variant.
+    """
+
+    def start(self, question: str) -> None: ...
+    def depth(self, depth: int, context: str) -> None: ...
+    def attempt(self, depth: int, attempt: int, trace: str, units: list[str]) -> None: ...
+    def rejected_unit_count(self, got: int, maximum: int) -> None: ...
+    def rejected_no_span(self) -> None: ...
+    def decision(self, decision: PruningDecision, units: list[str]) -> None: ...
+    def row(self, row: dict[str, Any]) -> None: ...
+    def advanced(self, next_context: str) -> None: ...
+    def stopped(self, depth: int) -> None: ...
+    def done(self, rows: list[dict[str, Any]]) -> None: ...
+
+
 HfLoader = Callable[..., Iterable[dict[str, Any]]]
 _NUMBERED_PREFIX_RE = re.compile(r"^\s*(?:[-*]\s+|\d+[\).\s-]+)")
 _SENTENCE_RE = re.compile(r"[^.!?]+[.!?]|[^.!?]+$")
@@ -307,43 +328,55 @@ def build_rows_for_question(
     generator: ReasoningGenerator,
     decision_model: PruningDecisionModel,
     config: DataCreationConfig,
+    observer: PruningObserver | None = None,
 ) -> list[dict[str, Any]]:
+    observer = observer or PruningObserver()
     rows: list[dict[str, Any]] = []
     accepted_units: list[str] = []
+    observer.start(question)
 
     for depth in range(config.max_pruning_depth):
         if len(rows) >= config.max_examples_per_question:
             break
 
         context = format_context(question, accepted_units)
+        observer.depth(depth, context)
 
-        trace_out = None
-        units_out = None
-        decision_out = None
+        accepted_attempt = None
         attempts = 0
 
         for _ in range(config.max_retries_per_depth):
             attempts += 1
             trace = generator.generate_reasoning(context=context)
             units = split_reasoning_units(trace.text, strategy=config.unit_split_strategy)
+            observer.attempt(depth, attempts, trace.text, units)
+
             if not 3 <= len(units) <= config.max_units_per_batch:
+                observer.rejected_unit_count(len(units), config.max_units_per_batch)
                 continue
+
             decision = decision_model.find_first_removable_span(
                 question=question, context=context, reasoning_units=units
             )
+            observer.decision(decision, units)
+
             if decision.valid_for(units):
-                trace_out, units_out, decision_out = trace, units, decision
+                accepted_attempt = (trace, units, decision)
                 break
 
-        if decision_out is None:
+            observer.rejected_no_span()
+
+        if accepted_attempt is None:
+            observer.stopped(depth)
             break
 
+        trace, units, decision = accepted_attempt
         row = build_pruning_transition_row(
             question=question,
             context_before_generation=context,
-            generated_trace=trace_out.text,
-            generated_units=units_out,
-            decision=decision_out,
+            generated_trace=trace.text,
+            generated_units=units,
+            decision=decision,
             depth=depth,
             generator_model=generator.source_model,
             round_id=config.round_id,
@@ -352,10 +385,14 @@ def build_rows_for_question(
         )
         row["metadata"]["retry_attempts"] = attempts
         rows.append(row)
+        observer.row(row)
 
-        accepted_units = advance_context_units(accepted_units, units_out, decision_out)
-        assert format_context(question, accepted_units) == f"{row['input_x']}\n{row['target_y']}"
+        accepted_units = advance_context_units(accepted_units, units, decision)
+        next_context = format_context(question, accepted_units)
+        assert next_context == f"{row['input_x']}\n{row['target_y']}"
+        observer.advanced(next_context)
 
+    observer.done(rows)
     return rows
 
 

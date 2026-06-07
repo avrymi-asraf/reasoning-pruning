@@ -11,7 +11,7 @@ Data creation was intentionally collapsed into a small set of files:
 | `src/reasoning_pruning/data_creation.py` | Full data-creation core: config loading, question loading, trace splitting, pruning decision contract, PT loop, row building, prompt/completion conversion, and HF dataset publishing. |
 | `src/reasoning_pruning/clients.py` | Generator G and decision model D clients for Transformers and Gemini, plus prompt loading, Gemini REST calls, and JSON decision parsing. |
 | `src/reasoning_pruning/cli.py` | Local CLI wiring for `build-dataset` and `inspect-dataset`; loads `.env`, builds clients, runs data creation, and optionally publishes. |
-| `src/reasoning_pruning/qualitative_inspection.py` and `scripts/qualitative_pruning_inspection.py` | Shared qualitative inspection loop plus CLI; prints every G/D/pruning/context step so humans can verify the pipeline still makes sense after structural changes. |
+| `src/reasoning_pruning/qualitative_inspection.py` and `scripts/qualitative_pruning_inspection.py` | A printing `PruningObserver` that hooks the **production** `build_rows_for_question` loop, plus the thin CLI that runs it. It does not reimplement the loop — printing is an observer on the real loop, so inspection output can never drift from what data creation runs. This live run is the real post-change check (see "Local validation"). |
 | `scripts/create_dataset_gemma4_job.py` | Thin HF Jobs wrapper around the shared data-creation library for Gemma-4 dataset creation. |
 | `configs/data/*.yaml` | Dataset-builder configs plus qualitative inspection configs. |
 | `prompts/*.txt` | Decision-model prompt templates. |
@@ -425,6 +425,10 @@ These are Hub dataset **configs** (`config_name="canonical"` and `config_name="t
 
 ## Local validation
 
+The automated suite only proves the pipeline is **wired and runs** — it is small
+on purpose and must never check implementation details (see the `testing` skill).
+It does NOT tell you whether the data is any good.
+
 ```bash
 uv run pytest
 uv run python -m py_compile src/reasoning_pruning/*.py scripts/*.py
@@ -433,7 +437,27 @@ uv run python scripts/reasoning_pruning_cli.py build-dataset \
     --config configs/data/dataset_builder_spectrum_gemma4.yaml --dry-run
 ```
 
-After changing data-creation structure, public loop functions, client wiring, unit splitting, prompt contracts, or context-advance logic, run the qualitative inspection script (or the matching notebook cell) and inspect whether the printed pipeline makes sense end-to-end. The dry-run and live qualitative commands may require the configured model provider to be runnable in the current environment. Gemma-4 dataset creation is intended for HF Jobs, not small local machines; use `configs/data/qualitative_inspection_gemma4_api.yaml` only as a cheap inspection proxy, never as a production training-data source.
+**The real check is the live qualitative inspection run.** After changing
+data-creation structure, public loop functions, client wiring, unit splitting,
+prompt contracts, or context-advance logic, run the inspection (script or the
+matching notebook cell) against a real model and read the printed flow: does G's
+reasoning make sense? Is the unit split clean? Is D removing genuine filler and
+picking a genuine next step? Passing tests are necessary but not sufficient — a
+green suite with nonsense traces still means the change is wrong.
+
+```bash
+uv run python scripts/qualitative_pruning_inspection.py \
+    --config configs/data/qualitative_inspection_gemma4_api.yaml \
+    --question-index 3 --max-depth 2 --max-retries 2
+```
+
+Because the inspector hooks the production `build_rows_for_question` loop via a
+`PruningObserver`, what it prints is exactly what data creation runs. Never
+reintroduce a separate inspection loop. The dry-run and live qualitative commands
+may require the configured model provider to be runnable in the current
+environment. Gemma-4 dataset creation is intended for HF Jobs, not small local
+machines; use `configs/data/qualitative_inspection_gemma4_api.yaml` only as a
+cheap inspection proxy, never as a production training-data source.
 
 ## Iterative Self-Distillation — G Is Always the Current Fine-Tuned Model
 
