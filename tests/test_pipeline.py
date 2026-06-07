@@ -52,7 +52,7 @@ def _config(round_id: str = "test") -> DataCreationConfig:
         max_examples_per_question=1,
         unit_split_strategy="numbered_or_lines",
         max_retries_per_depth=3,
-        max_units_per_batch=2,
+        max_units_per_batch=4,
     )
 
 
@@ -62,7 +62,7 @@ class _FakeGenerator:
 
     def generate_reasoning(self, *, question, context):
         return GeneratedTrace(
-            text="1. We need to find the sum.\n2. 2 + 3 = 5.",
+            text="1. We need to find the sum.\n2. 2 + 3 = 5.\n3. The answer is 5.",
             generation_config={},
         )
 
@@ -114,8 +114,8 @@ def test_pipeline_discards_failed_attempts_and_retries_from_the_same_context():
             self.contexts = []
             self.traces = iter(
                 [
-                    "1. Add the numbers.\n2. Calculate the result.",
-                    "1. We need to find the sum.\n2. 2 + 3 = 5.",
+                    "1. Add the numbers.\n2. Calculate the result.\n3. The answer is 5.",
+                    "1. We need to find the sum.\n2. 2 + 3 = 5.\n3. The answer is 5.",
                 ]
             )
 
@@ -141,8 +141,8 @@ def test_pipeline_discards_failed_attempts_and_retries_from_the_same_context():
 
     assert len(rows) == 1
     assert generator.contexts == ["Question:\nWhat is 2 + 3?"] * 2
-    assert rows[0]["generated_trace"] == "1. We need to find the sum.\n2. 2 + 3 = 5."
-    assert rows[0]["generated_units"] == ["We need to find the sum.", "2 + 3 = 5."]
+    assert rows[0]["generated_trace"] == "1. We need to find the sum.\n2. 2 + 3 = 5.\n3. The answer is 5."
+    assert rows[0]["generated_units"] == ["We need to find the sum.", "2 + 3 = 5.", "The answer is 5."]
     assert rows[0]["metadata"]["retry_attempts"] == 2
 
 
@@ -156,7 +156,7 @@ def test_pipeline_rejects_batches_larger_than_the_configured_unit_limit():
 
         def generate_reasoning(self, **_):
             self.calls += 1
-            return GeneratedTrace(text="1. Filler.\n2. 2 + 3 = 5.\n3. The answer is 5.", generation_config={})
+            return GeneratedTrace(text="1. A.\n2. B.\n3. C.\n4. D.\n5. E.", generation_config={})
 
     generator = _OversizedGenerator()
     rows = build_pt_dataset(

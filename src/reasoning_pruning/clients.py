@@ -354,7 +354,8 @@ def _generator_prompt(tokenizer: Any, context: str, max_units: int = 2) -> str:
 def _generator_instruction(context: str, max_units: int) -> str:
     return (
         f"{context}\n\n"
-        f"Continue the reasoning with exactly {max_units} numbered steps, one step per line. "
+        f"Continue the reasoning with 3 to {max_units} numbered steps, one step per line. "
+        "Include intermediate steps — do not jump straight to the conclusion. "
         "Do not write anything outside the numbered steps."
     )
 

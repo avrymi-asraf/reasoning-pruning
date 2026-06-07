@@ -132,7 +132,7 @@ def load_data_creation_config(path: Path) -> DataCreationConfig:
         max_pruning_depth=int(raw.get("max_pruning_depth", 1)),
         max_examples_per_question=int(raw.get("max_examples_per_question", 1)),
         unit_split_strategy=str(raw.get("unit_split_strategy", "numbered_or_lines")),
-        max_retries_per_depth=_positive_int(raw.get("max_retries_per_depth", 3), "max_retries_per_depth"),
+        max_retries_per_depth=_positive_int(raw.get("max_retries_per_depth", 2), "max_retries_per_depth"),
         max_units_per_batch=_minimum_int(raw.get("max_units_per_batch", 2), "max_units_per_batch", minimum=2),
     )
 
@@ -326,7 +326,7 @@ def build_rows_for_question(
             attempts += 1
             trace = generator.generate_reasoning(question=question, context=context)
             units = split_reasoning_units(trace.text, strategy=config.unit_split_strategy)
-            if not 2 <= len(units) <= config.max_units_per_batch:
+            if not 3 <= len(units) <= config.max_units_per_batch:
                 continue
             decision = decision_model.find_first_removable_span(
                 question=question, context=context, reasoning_units=units
