@@ -64,7 +64,7 @@ context = format_context(question, accepted_units)
 for retry_attempts in range(1, max_retries_per_depth + 1):
     trace = G.generate_reasoning(question=question, context=context)
     generated_units = split_reasoning_units(trace.text)
-    if not 2 <= len(generated_units) <= max_units_per_batch:
+    if not 3 <= len(generated_units) <= max_units_per_batch:
         continue
     decision = D.find_first_removable_span(question, context, generated_units)
     if decision.valid_for(generated_units):
@@ -220,7 +220,7 @@ scripts/reasoning_pruning_cli.py build-dataset / inspect-dataset
               ├── retry from the same context up to max_retries_per_depth:
               │     ├── G.generate_reasoning(question=question, context=context)
               │     ├── split_reasoning_units(trace.text, strategy=config.unit_split_strategy)
-              │     ├── require 2..max_units_per_batch units
+              │     ├── require 3..max_units_per_batch units
               │     ├── D.find_first_removable_span(question, context, generated_units)
               │     └── discard the attempt unless decision.valid_for(generated_units)
               ├── build_pruning_transition_row(...) from the successful attempt only
@@ -281,7 +281,7 @@ This context is exactly what G sees when it is asked to continue reasoning.
 
 #### 3. Ask G to generate reasoning
 
-`src/reasoning_pruning/clients.py` creates the configured generator client. The generator receives the current context and an instruction to write a short batch of numbered reasoning units, bounded by `max_units_per_batch` and `generation.max_new_tokens`, without telling G which reasoning habits D should prune. Transformers generation stops live after the configured number of newline-terminated units; Gemini relies on the prompt and token budget.
+`src/reasoning_pruning/clients.py` creates the configured generator client. The generator receives only the current context — no instruction about format or reasoning style. G generates freely. For `TransformersGenerator`, a newline-counting stopping criterion halts generation after `max_units_per_batch` newlines; for `GeminiGenerator`, length is controlled by `max_output_tokens` in the generation config.
 
 Each depth retries from the exact same clean context up to `max_retries_per_depth`. Attempts with too few or too many units, or with no valid D decision, are discarded completely and never enter a row or the accepted context.
 

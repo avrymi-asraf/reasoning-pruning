@@ -51,7 +51,7 @@ def run_qualitative_pruning_inspection(
 
         for _ in range(config.max_retries_per_depth):
             attempts += 1
-            trace = generator.generate_reasoning(question=question, context=context)
+            trace = generator.generate_reasoning(context=context)
             units = split_reasoning_units(trace.text, strategy=config.unit_split_strategy)
 
             print_section(f"Depth {depth} / attempt {attempts}", marker="-")

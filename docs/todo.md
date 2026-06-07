@@ -79,3 +79,6 @@ make the code simple, the code need to be modular the functoins need to be simpl
 # Change the unit split to be more aggressive.
 If there is a comma, linking words.
 I want a much, much wider division into units, so that the driver has more to download when he needs to.
+
+# remove part of sentences.
+In this approach we don't remove whole sentences. Instead, we rewrite the sentence by removing part and add change only connection words. this change requires to change the prompt, and remove the unit split. now we only have sentences and we want to rewrite it shortly by removing part of the sentence. and make only, only small changes. the rational behind it, is that small changes is semanticly closer to the original sentence, and the fine tuning will be work faster and beeter.

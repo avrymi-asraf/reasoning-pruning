@@ -90,12 +90,13 @@ class TransformersGenerator:
 
     def __post_init__(self) -> None:
         try:
-            from transformers import AutoModelForCausalLM, AutoTokenizer
+            from transformers import AutoModelForCausalLM, AutoTokenizer, StoppingCriteriaList
         except ImportError as exc:
             raise RuntimeError("Transformers generator requires the optional 'transformers' package.") from exc
 
         import torch
 
+        self._StoppingCriteriaList = StoppingCriteriaList
         token = os.environ.get("HF_TOKEN")
         self._tokenizer = AutoTokenizer.from_pretrained(
             self.source_model,
@@ -110,13 +111,19 @@ class TransformersGenerator:
             token=token,
         )
 
-    def generate_reasoning(self, *, question: str, context: str) -> GeneratedTrace:
-        from transformers import StoppingCriteriaList
-
-        prompt = _generator_prompt(self._tokenizer, context, self.max_units_per_batch)
+    def generate_reasoning(self, *, context: str) -> GeneratedTrace:
+        prompt = (
+            self._tokenizer.apply_chat_template(
+                [{"role": "user", "content": context}],
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+            if getattr(self._tokenizer, "chat_template", None)
+            else context
+        )
         inputs = self._tokenizer(prompt, return_tensors="pt").to(self._model.device)
         prompt_length = inputs["input_ids"].shape[-1]
-        stopping_criteria = StoppingCriteriaList(
+        stopping_criteria = self._StoppingCriteriaList(
             [_NewlineStoppingCriteria(self._tokenizer, prompt_length, self.max_units_per_batch)]
         )
         output_ids = self._model.generate(**inputs, **self.generation_config, stopping_criteria=stopping_criteria)
@@ -128,17 +135,14 @@ class TransformersGenerator:
 @dataclass
 class GeminiGenerator:
     source_model: str
-    source_model_revision: str | None = None
     generation_config: dict[str, Any] = field(default_factory=dict)
-    max_units_per_batch: int = 2
     api_key_env: str = "GEMINI_API_KEY"
     transport: GeminiTransport | None = None
 
-    def generate_reasoning(self, *, question: str, context: str) -> GeneratedTrace:
-        prompt = _generator_instruction(context, self.max_units_per_batch)
+    def generate_reasoning(self, *, context: str) -> GeneratedTrace:
         text = gemini_generate_text(
             model=self.source_model,
-            prompt=prompt,
+            prompt=context,
             generation_config=self.generation_config,
             api_key_env=self.api_key_env,
             transport=self.transport,
@@ -227,9 +231,7 @@ def create_generator_from_config(
     if provider == "gemini":
         return GeminiGenerator(
             source_model=str(config["model_id"]),
-            source_model_revision=config.get("revision"),
             generation_config=dict(generation),
-            max_units_per_batch=max_units_per_batch,
             api_key_env=str(config.get("api_key_env", "GEMINI_API_KEY")),
         )
     raise ValueError(f"unsupported generator provider: {provider}")
@@ -338,26 +340,6 @@ def gemini_rest_transport(url: str, body: dict[str, Any]) -> dict[str, Any]:
         detail = exc.read().decode("utf-8", errors="replace")
         message = _extract_error_message(detail) or detail[:500]
         raise RuntimeError(f"Gemini API error {exc.code}: {message}") from exc
-
-
-def _generator_prompt(tokenizer: Any, context: str, max_units: int = 2) -> str:
-    content = _generator_instruction(context, max_units)
-    if getattr(tokenizer, "chat_template", None):
-        return tokenizer.apply_chat_template(
-            [{"role": "user", "content": content}],
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-    return content
-
-
-def _generator_instruction(context: str, max_units: int) -> str:
-    return (
-        f"{context}\n\n"
-        f"Continue the reasoning with 3 to {max_units} numbered steps, one step per line. "
-        "Include intermediate steps — do not jump straight to the conclusion. "
-        "Do not write anything outside the numbered steps."
-    )
 
 
 def _extract_gemini_text(response: dict[str, Any]) -> str:

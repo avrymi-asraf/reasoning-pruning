@@ -60,7 +60,7 @@ class _FakeGenerator:
     source_model = "fake-g"
     source_model_revision: str | None = "v0"
 
-    def generate_reasoning(self, *, question, context):
+    def generate_reasoning(self, *, context):
         return GeneratedTrace(
             text="1. We need to find the sum.\n2. 2 + 3 = 5.\n3. The answer is 5.",
             generation_config={},
@@ -119,7 +119,7 @@ def test_pipeline_discards_failed_attempts_and_retries_from_the_same_context():
                 ]
             )
 
-        def generate_reasoning(self, *, question, context):
+        def generate_reasoning(self, *, context):
             self.contexts.append(context)
             return GeneratedTrace(text=next(self.traces), generation_config={})
 
@@ -321,7 +321,6 @@ def test_live_gemini_pipeline_generates_reasoning_and_produces_rows():
     )
 
     trace = generator.generate_reasoning(
-        question="If x + 2 = 5, what is x?",
         context="Question:\nIf x + 2 = 5, what is x?",
     )
     assert trace.text.strip(), "Gemini must return non-empty reasoning"

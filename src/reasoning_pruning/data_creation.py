@@ -74,7 +74,7 @@ class ReasoningGenerator(Protocol):
     source_model: str
     source_model_revision: str | None
 
-    def generate_reasoning(self, *, question: str, context: str) -> GeneratedTrace:
+    def generate_reasoning(self, *, context: str) -> GeneratedTrace:
         ...
 
 
@@ -324,7 +324,7 @@ def build_rows_for_question(
 
         for _ in range(config.max_retries_per_depth):
             attempts += 1
-            trace = generator.generate_reasoning(question=question, context=context)
+            trace = generator.generate_reasoning(context=context)
             units = split_reasoning_units(trace.text, strategy=config.unit_split_strategy)
             if not 3 <= len(units) <= config.max_units_per_batch:
                 continue
