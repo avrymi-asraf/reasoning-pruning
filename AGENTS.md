@@ -453,6 +453,22 @@ Dataset creation runs on HF Jobs with `scripts/create_dataset_gemma4_job.py`; it
 
 Training runs on HF Jobs with `scripts/train_pt_dataset_job.py`; it requires `HF_TOKEN` and `WANDB_API_KEY`. Training configs live under `configs/train/`.
 
+## Skills
+
+**Skills are live documentation — update them whenever you learn something new about the project or its tools.** A skill that drifts from reality is worse than no skill.
+
+| Skill | When to invoke |
+| --- | --- |
+| `reasoning-pruning` | Before any data-creation, pipeline, or config work — read and update when the loop, contract, or config shape changes |
+| `training` | Before running or modifying HF Jobs training scripts or training configs |
+| `huggingface-llm-trainer` | When setting up or debugging SFT/DPO/GRPO training jobs |
+| `huggingface-datasets` | When loading, publishing, or inspecting HF datasets |
+| `wandb-for-trl` | When configuring W&B logging for TRL/SFTTrainer runs |
+| `hf-cli` | When running HF CLI commands (login, upload, download) |
+| `testing` | Before writing or modifying tests — behavior tests only, heavy tests opt-in |
+
+**Rule:** after any session where you discover a new pattern, fix a bug, or learn a constraint not yet captured — update the relevant skill before ending the session.
+
 ## Code Writing Rules
 
 ### File Header (Mandatory)
