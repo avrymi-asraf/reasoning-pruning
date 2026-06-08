@@ -23,7 +23,7 @@ After any change that can affect data quality, run a pipeline inspection before 
 
 **Passing automated tests is necessary but not sufficient.** A green suite with nonsense traces still means the change is wrong.
 
-### The two pipeline inspection tools
+### The three pipeline inspection tools
 
 **Script (quick, API-based — use this first):**
 ```bash
@@ -33,10 +33,13 @@ uv run python scripts/pipeline_inspection.py \
 ```
 Uses hosted `gemma-4-26b-a4b-it` as a cheap Gemma-family proxy. For inspection only — never use rows from this config for training.
 
-**Notebook (full, local G on Colab — for D prompt iteration):**
-`notebooks/data_creation_playground.ipynb` — runs the complete pipeline with the real fine-tuned G on a Colab GPU. The only environment for iterating D prompts against live G traces.
+**Colab CLI (agents, headless — D prompt and unit-split iteration on real G):**
+`scripts/colab_inspect_setup.py` + `colab-cli` — provision a T4 session, run the setup script once to load G, then iterate D prompts live by uploading prompt files and sending stdin snippets to the kernel without restarting. Use the `colab-pipeline-inspection` skill. Results go to `output/pipeline_inspection/`.
 
-Both tools hook the production `build_rows_for_question` loop via `PruningObserver`. They print exactly what data creation produces — never a separate copy of the loop.
+**Notebook (humans, browser — full interactive playground on real G):**
+`notebooks/data_creation_playground.ipynb` — runs the complete pipeline with the real fine-tuned G on a Colab GPU. Requires a T4/A100 runtime in the browser. Headless-safe: checks env vars before Colab secrets.
+
+All three tools hook the production `build_rows_for_question` loop via `PruningObserver`. They print exactly what data creation produces — never a separate copy of the loop.
 
 ## Current Code Shape
 
@@ -505,6 +508,7 @@ Training runs on HF Jobs with `scripts/train_pt_dataset_job.py`; it requires `HF
 | `hf-cli` | When running HF CLI commands (login, upload, download) |
 | `testing` | Before writing or modifying tests — behavior tests only, heavy tests opt-in |
 | `coding-principles` | Before and after you write code — ensure it follows the project's coding principles |
+| `colab-pipeline-inspection` | When running pipeline inspection with real Gemma-4 on Colab GPU — D prompt iteration, unit-split strategy testing, any inspection that requires the fine-tuned model |
 
 **Rule:** after any session where you discover a new pattern, fix a bug, or learn a constraint not yet captured — update the relevant skill before ending the session.
 

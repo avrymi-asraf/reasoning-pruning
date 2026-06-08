@@ -101,4 +101,8 @@ play with this, make sure you understand it good. and create the skill.
 remeber focus on:
 1 - how to use by agents.
 2 - how make pipeline inspection by this.
-the 
+
+
+1. the project isnot only for gemma4, we want to investigate variety of models.
+2. The agent need to run things close to the way it runs in the notebook, maybe run cells from the notebook? (only if it not make the code more complicated)
+3. use the mpc is good idea. I open the colab notebook, play with it.
