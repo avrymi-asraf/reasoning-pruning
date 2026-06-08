@@ -1,9 +1,9 @@
-# Qualitative inspection only: this config uses hosted Gemma as a cheap proxy G.
+# Pipeline inspection only: this config uses hosted Gemma as a cheap proxy G.
 # Do not publish or train from these rows because G is not the active fine-tuned
 # self-distillation model. Google documents Gemma API access as an alternative
 # to hosting local Gemma, and HF Inference Providers are a fallback for hosted
 # Gemma models when this repo adds an HF provider client.
-round_id: qualitative-gemma4-api
+round_id: pipeline-inspection-gemma4-api
 source_type: hf_dataset
 source_dataset: avreymi/reasoning-spectrum-qa
 source_dataset_revision: main
@@ -12,8 +12,8 @@ source_subset: null
 source_split: data
 source_question_field: question
 source_limit: 5
-code_version: local-qualitative-inspection
-hub_dataset_id: local/qualitative-inspection-do-not-publish
+code_version: local-pipeline-inspection
+hub_dataset_id: local/pipeline-inspection-do-not-publish
 private: true
 
 generator:

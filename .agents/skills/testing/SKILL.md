@@ -12,12 +12,12 @@ and does the pipeline run end to end after I changed the code?** They do not
 dictate *how* the code works, and they are not where you decide whether the data
 is any good.
 
-**The real test is the live qualitative inspection run** (`src/reasoning_pruning/
-qualitative_inspection.py` via `scripts/qualitative_pruning_inspection.py` or the
-notebook). That is where you look at actual G output and ask the questions that
-matter: does G's reasoning make sense? Is the unit split clean? Is D removing
-real filler and picking a real next step? A unit test cannot judge any of that —
-do not try to make it. See the [reasoning-pruning] skill for how to run it.
+**The real check is pipeline inspection** (`src/reasoning_pruning/pipeline_inspection.py`
+via `scripts/pipeline_inspection.py` or the notebook). That is where you look
+at actual G output and ask the questions that matter: does G's reasoning make sense?
+Is the unit split clean? Is D removing real filler and picking a real next step?
+A unit test cannot judge any of that — do not try to make it. See the [reasoning-pruning]
+skill for when it is required and how to run it.
 
 > Keep the automated suite very small. A few comprehensive "it runs / it's
 > connected" tests beat a pile of tiny tests that pin down implementation
@@ -35,9 +35,9 @@ The behavioral contracts, at the level the caller cares about:
 - Does spectrum question assembly never leak answer fields to G?
 - Does a stubbed/live LLM response parse into a usable decision?
 
-## The inspection loop must run the production loop — never a copy
+## The pipeline inspector must run the production loop — never a copy
 
-The qualitative inspector must execute `build_rows_for_question` (via the
+The pipeline inspector must execute `build_rows_for_question` (via the
 `PruningObserver` hook), not a hand-copied parallel loop. We learned this the
 hard way: a copied inspection loop silently drifted (production required ≥3 units
 while the inspection copy still allowed ≥2), so the "most important verification"
@@ -87,7 +87,7 @@ a removal at the front leaves a valid target.
 - `tests/test_question_source.py` — spectrum question assembly never leaks answers.
 - `tests/test_clients.py` — G/D wiring: stubbed Gemini decision parsing + the live
   gated end-to-end test.
-- `tests/test_qualitative_inspection.py` — smoke that the inspector runs the
+- `tests/test_pipeline_inspection.py` — smoke that the inspector runs the
   production loop and returns rows.
 - `tests/fakes.py` — shared fakes (not a test file).
 

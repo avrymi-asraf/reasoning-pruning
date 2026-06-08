@@ -1,4 +1,4 @@
-  ---
+k  ---
 name: create-qa-spectrum
 description:
   Streams, filters, and selects diverse QA datasets across multiple reasoning families, and pushes the final dataset to Hugging Face.

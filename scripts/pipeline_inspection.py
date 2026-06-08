@@ -1,10 +1,10 @@
-"""Run a qualitative reasoning-pruning inspection from the command line.
+"""Run a pipeline inspection from the command line.
 
 This script is the local entry point for printing each stage of one pruning-data
 example from question selection through the next-depth context. It delegates the
-actual loop to `reasoning_pruning.qualitative_inspection` so notebook and CLI
-inspection stay uniform. It is intended for cheap local or API-backed inspection
-runs, not for publishing production datasets.
+actual loop to `reasoning_pruning.pipeline_inspection` so notebook and CLI
+inspection stay uniform. Intended for cheap local or API-backed inspection runs;
+do not use these rows for publishing production datasets.
 """
 
 from __future__ import annotations
@@ -24,12 +24,12 @@ if str(SRC) not in sys.path:
 from reasoning_pruning.cli import load_env_file
 from reasoning_pruning.clients import create_decision_model_from_config, create_generator_from_config
 from reasoning_pruning.data_creation import load_data_creation_config, load_questions
-from reasoning_pruning.qualitative_inspection import run_qualitative_pruning_inspection
+from reasoning_pruning.pipeline_inspection import run_pipeline_inspection
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="qualitative-pruning-inspection")
-    parser.add_argument("--config", default="configs/data/qualitative_inspection_gemma4_api.yaml")
+    parser = argparse.ArgumentParser(prog="pipeline-inspection")
+    parser.add_argument("--config", default="configs/data/pipeline_inspection_gemma4_api.yaml")
     parser.add_argument("--question-index", type=int, default=0)
     parser.add_argument("--question", default=None)
     parser.add_argument("--max-depth", type=int, default=None)
@@ -54,7 +54,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_units_per_batch=config.max_units_per_batch,
     )
     decision_model = create_decision_model_from_config(config.decision, config.pruning, prompts_dir=args.prompts_dir)
-    run_qualitative_pruning_inspection(
+    run_pipeline_inspection(
         question=question,
         generator=generator,
         decision_model=decision_model,
@@ -66,7 +66,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _select_question(config, question_index: int) -> str:
     questions = load_questions(config, hf_token=os.environ.get("HF_TOKEN"))
     if not questions:
-        raise RuntimeError("No questions were loaded for qualitative inspection.")
+        raise RuntimeError("No questions were loaded for pipeline inspection.")
     if question_index < 0 or question_index >= len(questions):
         raise RuntimeError(f"question index {question_index} is outside 0..{len(questions) - 1}")
     return questions[question_index]

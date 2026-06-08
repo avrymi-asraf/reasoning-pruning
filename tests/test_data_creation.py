@@ -4,8 +4,8 @@ These check that the loop is wired and runs the canonical contract end to end:
 it emits `input_x -> target_y` rows, holds the next-context invariant, gives up
 cleanly when nothing is prunable, and discards bad attempts without polluting
 the context. They intentionally do not assert internal strings, metadata field
-shapes, or call counts — the real semantic check is the qualitative inspection
-run in `src/reasoning_pruning/qualitative_inspection.py`.
+shapes, or call counts — the real semantic check is the pipeline inspection
+run in `src/reasoning_pruning/pipeline_inspection.py`.
 """
 
 from reasoning_pruning.data_creation import (

@@ -5,7 +5,7 @@ Fast test: the Gemini decision client turns a model response into a
 call, no assertions about request URL/schema internals). Slow test: the real
 Gemini pipeline, gated behind env vars, is the only place real model output is
 exercised in the suite. The richer "does the output make sense" check lives in
-the qualitative inspection run, not here.
+the pipeline inspection run, not here.
 """
 
 import json

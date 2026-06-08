@@ -5,6 +5,8 @@ description: Project notes for automatic reasoning-pruning data creation and HF 
 
 # Reasoning-Pruning Project Notes
 
+**R&D project.** The pipeline evolves rapidly — every change to D prompts, unit splitting, G checkpoints, or context-advance logic must be followed by a pipeline inspection run (see "Pipeline Inspection" section below) before it is considered done. Automated tests only verify the pipeline is wired; pipeline inspection verifies the data is good.
+
 The real dataset pipeline is automatic. Do not treat hand-written smoke rows or
 manual `reasoning_steps + removable_index` calls as the core system.
 
@@ -53,8 +55,8 @@ Important modules after the data-creation simplification:
 - `data_creation.py`: the whole automatic data-creation core. It loads dataset-builder YAML, reads local/HF questions, defines `GeneratedTrace`, `PruningDecision`, and `PruningObserver`, splits reasoning units, runs the single per-question loop `build_rows_for_question`, builds canonical rows, advances context, converts rows to prompt/completion, and publishes canonical/training configs to the Hub.
 - `clients.py`: model boundaries for G and D. It supports Transformers and Gemini generators plus Transformers/Gemini JSON decision models, prompt loading, Gemini REST transport, and JSON decision parsing.
 - `cli.py`: local CLI wiring for `build-dataset` and `inspect-dataset`; it loads `.env`, builds clients from config, calls `data_creation.build_pt_dataset`, and optionally publishes.
-- `qualitative_inspection.py`: a printing `PruningObserver` plus `run_qualitative_pruning_inspection`, which calls the **production** `build_rows_for_question` with that observer. It does NOT reimplement the loop — printing is a hook on the real loop, so script/notebook output can never drift from what data creation runs. (A copied inspection loop once drifted to a ≥2-unit gate while production moved to ≥3; the observer design exists to prevent exactly that.)
-- `scripts/qualitative_pruning_inspection.py`: the thin CLI entry point (arg parsing, `.env`, config + client construction) that calls `run_qualitative_pruning_inspection`. Same library-vs-entry-point split as `data_creation.py`/`cli.py` — it is not a second copy of the loop. Run it after any pipeline change to read the printed flow and judge whether G/units/D make sense, not just that tests pass.
+- `pipeline_inspection.py`: a printing `PruningObserver` plus `run_pipeline_inspection`, which calls the **production** `build_rows_for_question` with that observer. It does NOT reimplement the loop — printing is a hook on the real loop, so script/notebook output can never drift from what data creation runs. (A copied inspection loop once drifted to a ≥2-unit gate while production moved to ≥3; the observer design exists to prevent exactly that.)
+- `scripts/pipeline_inspection.py`: the thin CLI entry point (arg parsing, `.env`, config + client construction) that calls `run_pipeline_inspection`. Same library-vs-entry-point split as `data_creation.py`/`cli.py` — it is not a second copy of the loop. Run it after any pipeline change to read the printed flow and judge whether G/units/D make sense, not just that tests pass.
 - `training_config.py`: loads only training YAML from `configs/train/`
   (e.g. `configs/train/training_gemma4_gsm8k_100.yaml`).
 - `model_registry.py`: builds accepted-checkpoint lineage/model-card records.
@@ -191,26 +193,23 @@ The `build-dataset --dry-run` CLI command and `inspect-dataset` command only wor
 configs that use a Gemini or local-file generator, not `transformers` provider, because
 Gemma-4-E2B-it can't be loaded locally without a GPU.
 
-## Qualitative inspection for pipeline sanity
+## Pipeline Inspection — Required for Pipeline-Affecting Changes
 
-When changing the data-creation structure, public loop signatures, client constructors,
-unit splitting, D prompt contract, or context-advance behavior, do not rely only on
-the automated tests — they only prove the pipeline is wired and runs. The real check
-is running the qualitative inspection against a live model and reading the printed
-flow (does G make sense? is the unit split clean? is D removing real filler?). The
-inspector hooks the production loop via `PruningObserver`, so its output is exactly
-what data creation produces:
+This is an R&D project. **Pipeline inspection is the primary quality feedback mechanism** — it answers whether the data is good, which no automated test can do.
 
+Run a pipeline inspection after any change that affects data quality: G/D model config, unit splitting strategy, D prompt version, context-advance logic, row-building, question loading, retry/depth control, or public loop signatures. Passing automated tests is necessary but not sufficient — a green suite with nonsense traces means the change is wrong.
+
+The inspector hooks the production `build_rows_for_question` loop via `PruningObserver`. Its output is exactly what data creation produces — never a copy of the loop.
+
+**Script (quick, API-based):**
 ```bash
-uv run python scripts/qualitative_pruning_inspection.py \
-  --config configs/data/qualitative_inspection_gemma4_api.yaml \
+uv run python scripts/pipeline_inspection.py \
+  --config configs/data/pipeline_inspection_gemma4_api.yaml \
   --question-index 3 --max-depth 2 --max-retries 2
 ```
+Uses hosted `gemma-4-26b-a4b-it` as a cheap Gemma-family proxy. For inspection only — never publish/train rows from this config.
 
-The qualitative config uses hosted `gemma-4-26b-a4b-it` as a cheap Gemma-family proxy
-G. It is for inspection only; never publish/train rows from it because production
-self-distillation must use the current fine-tuned G. Keep the notebook inspection cell
-calling the same shared helper so script and notebook output remain uniform.
+**Notebook (`notebooks/data_creation_playground.ipynb`):** full pipeline on Colab GPU with the real fine-tuned G. The only environment for iterating D prompts against live G traces. Keep the notebook inspection cell calling the same shared helper so script and notebook output remain uniform.
 
 ## Full multi-depth playground (Google Colab) — the D-prompt playground
 

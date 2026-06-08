@@ -82,3 +82,23 @@ I want a much, much wider division into units, so that the driver has more to do
 
 # remove part of sentences.
 In this approach we don't remove whole sentences. Instead, we rewrite the sentence by removing part and add change only connection words. this change requires to change the prompt, and remove the unit split. now we only have sentences and we want to rewrite it shortly by removing part of the sentence. and make only, only small changes. the rational behind it, is that small changes is semanticly closer to the original sentence, and the fine tuning will be work faster and beeter.
+
+
+# update the observation system - 
+this is a research and development project. the code change repidly, and the most important thing is to find the best pipline from createing the data, to the training and evaluation. to do this we most have a good observation system. and the prosses of update the code (if isn't only change the code that not effects on the pipeline) most have in addition to the tests that the code works. you have to use the observation system to see how this changes effect the pipline. so we have to look every step and think about this and make qualitative inspection for every step. for this we have the notebook and the scripts qualitative_inspection.
+I need you update every docs about this point, emphasize the role of the project as research and development, and the importance of the observation system/qualitative_inspection, and the importance of use it.
+pass trouge AGENTS.md and skills and update this point. I want to change the way we think about this project.
+also - we use two names: observation system and qualitative inspection, I want to unify it to one name. Make sure the terminology in the documentation and code is consistent and clear about what you're talking about. You can change names or whatever you want.
+
+
+# Allow agents using pipeline inspection by colab
+now, when we need to use the pipeline inspection, we use the notebook /home/avreymi/code/reasoning-pruning-codex/notebooks/data_creation_playground.ipynb, for example when we need to play with the unit_split_strategy and D prompt. I want to allow agents to do this. but the problem is that we can run the notebook only on colab server (becouse we need at least T4 high ram to run it).
+I added colab-mcp and colab-cli to work with colab. the colab-cli is new, you have to read lot about it.
+What I need is:
+read the colab-cli documentation, try to run the mcp, and add skill about using colab. focus on interactive interface that allow us start a server, inspect the pipeline change it live and continue. without the need to stop the server and start it again. this is very important, because we want to play with the prompt and see the results immediately, without the need to stop and start the server again. also focus on runing the notebook.
+the results sholde be written to the output/pipeline_inspection.
+play with this, make sure you understand it good. and create the skill.
+remeber focus on:
+1 - how to use by agents.
+2 - how make pipeline inspection by this.
+the 

@@ -1,19 +1,18 @@
-"""Smoke test for the qualitative inspector.
+"""Smoke test for the pipeline inspector.
 
-The inspector now runs the production `build_rows_for_question` loop with a
-printing observer, so this only confirms it stays wired: it runs end to end and
-returns the same rows the production loop would. The actual value of the
-inspector is reading its printed output against a live model, which a unit test
-cannot judge.
+The inspector runs the production `build_rows_for_question` loop with a printing
+observer, so this only confirms it stays wired: it runs end to end and returns
+the same rows the production loop would. The actual value of the inspector is
+reading its printed output against a live model, which a unit test cannot judge.
 """
 
-from reasoning_pruning.qualitative_inspection import run_qualitative_pruning_inspection
+from reasoning_pruning.pipeline_inspection import run_pipeline_inspection
 
 from fakes import FakeDecisionModel, FakeGenerator, NoRemovalDecisionModel, make_config
 
 
 def test_inspection_runs_the_production_loop_and_returns_rows(capsys):
-    rows = run_qualitative_pruning_inspection(
+    rows = run_pipeline_inspection(
         question="What is 2 + 3?",
         generator=FakeGenerator(),
         decision_model=FakeDecisionModel(),
@@ -26,7 +25,7 @@ def test_inspection_runs_the_production_loop_and_returns_rows(capsys):
 
 
 def test_inspection_renders_the_reject_and_stop_paths_without_crashing(capsys):
-    rows = run_qualitative_pruning_inspection(
+    rows = run_pipeline_inspection(
         question="What is 2 + 3?",
         generator=FakeGenerator(),
         decision_model=NoRemovalDecisionModel(),

@@ -1,12 +1,11 @@
-"""Print every stage of reasoning-pruning data creation for human inspection.
+"""Pipeline inspection: print every stage of data creation for human judgment.
 
 This module does NOT reimplement the pruning loop. It runs the production
 `build_rows_for_question` loop with a printing `PruningObserver`, so what a
-human reads here is exactly what the dataset-creation and HF Jobs paths run —
-the two can never drift. It is the real post-change check: after editing the
-pipeline, run it (or the matching notebook cell) and judge whether G's traces,
-the unit split, and D's decisions actually make sense. Intended for cheap
-local/API-backed inspection before expensive dataset creation or training.
+human reads here is exactly what dataset creation and HF Jobs run — the two
+can never drift. After any pipeline-affecting change, run this (or the matching
+notebook cell) and judge whether G's traces, the unit split, and D's decisions
+make sense. This is the primary quality feedback mechanism for the project.
 """
 
 from __future__ import annotations
@@ -23,7 +22,7 @@ from reasoning_pruning.data_creation import (
 )
 
 
-def run_qualitative_pruning_inspection(
+def run_pipeline_inspection(
     *,
     question: str,
     generator: ReasoningGenerator,
@@ -74,7 +73,7 @@ class _PrintingObserver(PruningObserver):
 
     def done(self, rows: list[dict[str, Any]]) -> None:
         print_section("Inspection summary")
-        print(f"Created {len(rows)} qualitative training row(s).")
+        print(f"Created {len(rows)} training row(s).")
 
 
 def print_section(title: str, *, marker: str = "=") -> None:

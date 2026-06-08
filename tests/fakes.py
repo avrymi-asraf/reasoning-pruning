@@ -2,7 +2,7 @@
 
 These satisfy the generator/decision-model protocols so the pipeline tests run
 in milliseconds with no GPU or network. They are deliberately minimal: the real
-"does the output make sense" check is the live qualitative inspection run, not
+"does the output make sense" check is the live pipeline inspection run, not
 these fakes.
 """
 
