@@ -105,4 +105,4 @@ remeber focus on:
 
 1. the project isnot only for gemma4, we want to investigate variety of models.
 2. The agent need to run things close to the way it runs in the notebook, maybe run cells from the notebook? (only if it not make the code more complicated)
-3. use the mpc is good idea. I open the colab notebook, play with it.
+3. use the mpc is good idea. I open the colab notebook, play with it. here the link:https://colab.research.google.com/github/avrymi-asraf/reasoning-pruning/blob/master/notebooks/data_creation_playground.ipynb. if you need more things let my know.

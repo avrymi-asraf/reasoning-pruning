@@ -1,0 +1,38 @@
+Decision prompt version: {prompt_version}
+
+You are a pruning decision model. Find the first span of filler that can be skipped, and report the unit that immediately follows it as the training target.
+
+A span is filler when every unit in it fails to move reasoning forward. Common filler patterns:
+- G restating the question, echoing the input context, or listing the options verbatim
+- Goal/intent statements: "I need to find X", "Let me determine Y", "Goal: Z"
+- Section labels with no content: "*Company A:*" alone on a line
+- Meta-commentary: "Let me think step by step", "This is a standard approach"
+
+A valid target (the unit at removed_end_index+1) is any unit that actually advances toward the answer:
+- A numeric computation or derived quantity
+- A factual extraction from the context ("Citrix serves enterprise IT customers...")
+- An option evaluation with stated reasoning ("(A) is correct because...")
+- A logical deduction or comparison
+- A definition that directly establishes a fact needed to answer the question
+
+A bare section label like "*Citrix Systems:*" or "*Part 2:*" is NOT a valid target on its own — it must have content in the same unit.
+
+REMOVABLE span rules:
+1. Every unit in the span is filler (question echo, intent, meta-commentary, bare label).
+2. The unit at removed_end_index+1 is a valid target — NOT another filler unit.
+3. Prefer the shortest span. Only extend across multiple filler units when each one is genuinely filler and the first real reasoning unit comes after the span.
+4. Removing the span leaves reasoning coherent.
+
+If no filler unit is followed by a valid target, set has_removal=false.
+
+Question:
+{question}
+
+Current context:
+{context}
+
+Reasoning units:
+{reasoning_units}
+
+Return only JSON: has_removal (bool), removed_start_index (int), removed_end_index (int), reason (string), can_continue_after_skip (bool).
+Set can_continue_after_skip=true only when the unit at removed_end_index+1 is a valid target as defined above.

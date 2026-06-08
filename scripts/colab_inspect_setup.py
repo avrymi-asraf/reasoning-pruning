@@ -43,26 +43,29 @@ subprocess.run(
 sys.path.insert(0, str(_REPO / "src"))
 
 from reasoning_pruning.data_creation import load_data_creation_config, load_questions  # noqa: E402
-from reasoning_pruning.clients import TransformersGenerator, create_decision_model_from_config  # noqa: E402
+from reasoning_pruning.clients import (  # noqa: E402
+    create_generator_from_config,
+    create_decision_model_from_config,
+)
 from reasoning_pruning.pipeline_inspection import run_pipeline_inspection  # noqa: E402
 
-print("Loading G (3-5 min on first GPU run)...")
-generator = TransformersGenerator(
-    source_model="avreymi/gemma-4-E2B-it-reasoning-pruning",
-    generation_config={"max_new_tokens": 512, "temperature": 0.7, "do_sample": True},
-    max_units_per_batch=2,
-)
-print("G ready:", generator.source_model)
-
+# G comes from config.generator, never hardcoded — swap the model by editing
+# config.generator["model_id"] (the same `replace`/dict-edit pattern used for D
+# prompts), so this works for any model under investigation, not just Gemma-4.
 config = load_data_creation_config(_CONFIG_PATH)
 config = replace(config, max_pruning_depth=4, max_examples_per_question=3, source_limit=10, max_units_per_batch=20)
+
+print(f"Loading G from config: {config.generator['model_id']} (3-5 min on first GPU run)...")
+generator = create_generator_from_config(config.generator, config.generation, max_units_per_batch=2)
+print("G ready:", config.generator["model_id"])
+
 questions = load_questions(config, hf_token=os.environ.get("HF_TOKEN"))
 decision_model = create_decision_model_from_config(
     config.decision, config.pruning, prompts_dir=str(_PROMPTS_DIR)
 )
 
 print("\n=== READY FOR INSPECTION ===")
-print(f"G: {generator.source_model}")
+print(f"G: {config.generator['model_id']}")
 print(f"D: {config.decision['model_id']} | prompt: {config.decision['prompt_version']}")
 print(f"unit_split_strategy: {config.unit_split_strategy}")
 print(f"Questions: {len(questions)}")

@@ -25,7 +25,7 @@ decision:
   provider: gemini-json
   model_id: gemini-3.1-flash-lite
   api_key_env: GEMINI_API_KEY
-  prompt_version: conservative-skip-v1
+  prompt_version: aggressive-skip-v1
 
 generation:
   max_new_tokens: 512
@@ -39,7 +39,7 @@ pruning:
   temperature: 0.0
 
 max_pruning_depth: 3
-max_examples_per_question: 1
+max_examples_per_question: 3
 unit_split_strategy: clauses
 max_retries_per_depth: 3
 max_units_per_batch: 6

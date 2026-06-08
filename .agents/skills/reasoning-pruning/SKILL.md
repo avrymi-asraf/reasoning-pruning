@@ -105,12 +105,27 @@ be trained on the resulting rows.
 
 The active generator model is `avreymi/gemma-4-E2B-it-reasoning-pruning`.
 
-Decision prompt quality rule (incremental-skip-v2, updated 2026-06-03):
+Decision prompts — current versions in `prompts/` (as of 2026-06-08):
 
-`can_continue_after_skip=true` requires that the unit at `removed_end_index+1` contains
-ACTUAL computation, a derived fact, or a logical deduction — NOT a goal statement
-('Determine X', 'We need to find Y', 'Calculate Z'). Goal statements are themselves
-filler. The prompt now contains explicit REMOVABLE vs NOT REMOVABLE examples.
+- `conservative-skip-v1`: Requires target unit to contain ACTUAL reasoning (numeric computation, derived fact, logical deduction). Too strict for non-arithmetic questions — fails when G echoes the question/options before a factual/MC analysis step (7/10 on spectrum dataset, max-depth 1).
+- `balanced-skip-v1`: Allows multi-unit spans; accepts option evaluations and factual extractions as valid targets. 10/10 on spectrum dataset but may accept bare section headers (e.g. `*Citrix Systems:*` alone) as targets.
+- `aggressive-skip-v1` (added 2026-06-08): Like balanced but explicitly rejects bare section labels as targets — the unit after removal must carry content, not just a label. 10/10 on spectrum dataset with cleaner targets. **Recommended for spectrum-style questions.**
+
+The active dataset-builder config (`dataset_builder_spectrum_gemma4.yaml`) uses `conservative-skip-v1`. Update `decision.prompt_version` to switch.
+
+`can_continue_after_skip=true` requires the unit at `removed_end_index+1` to be a valid target: a computation, factual extraction, option evaluation with stated reasoning, logical deduction, or factual definition. NOT another goal/intent, NOT a bare section label.
+
+**Prompt comparison technique** (no new scripts): create a YAML config variant per prompt (one-line diff on `decision.prompt_version`), then:
+```bash
+for i in {0..9}; do
+  uv run python scripts/pipeline_inspection.py \
+    --config configs/data/<variant>.yaml \
+    --question-index $i --max-depth 1 --max-retries 2 \
+    > output/pipeline_inspection/prompt_comparison/<prompt>_q${i}.txt 2>&1
+done
+grep "Created [0-9]* training" output/pipeline_inspection/prompt_comparison/<prompt>_q*.txt
+```
+Comparison results go to `output/pipeline_inspection/prompt_comparison/`. Proxy G (`gemma-4-26b-a4b-it`) is good for relative comparisons between prompts; final validation on real G requires Colab.
 
 Generator prompt rule:
 
@@ -126,12 +141,15 @@ shims, re-exports for removed names, or parallel old/new code paths.
 Prompts folder:
 
 Decision-model prompt templates live in `prompts/` as `.txt` files named by
-`prompt_version` (e.g. `prompts/incremental-skip-v2.txt`). The local package
+`prompt_version` (e.g. `prompts/aggressive-skip-v1.txt`). The local package
 (`clients.py`) loads from this directory via `load_prompt_template(version,
-prompts_dir)`. The HF Jobs script (`create_dataset_gemma4_job.py`) now uses the
-shared package code instead of embedding a separate prompt constant. To create a
-new prompt version: add `prompts/<new-version>.txt` and reference it in the
-dataset-builder config's `decision.prompt_version` field.
+prompts_dir)`. To create a new prompt version: add `prompts/<new-version>.txt`
+and reference it in the dataset-builder config's `decision.prompt_version` field.
+
+Note: `create_dataset_gemma4_job.py` embeds a prompt constant (`_INCREMENTAL_SKIP_V2`)
+for HF Jobs execution since the `prompts/` directory is not available on the jobs server.
+When switching the active prompt, also update the embedded constant and `prompt_version`
+field in that script.
 
 Config folder split:
 

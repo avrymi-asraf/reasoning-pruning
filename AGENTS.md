@@ -379,7 +379,7 @@ D returns JSON like:
 - start/end indices are in range;
 - `removed_end_index + 1` exists, because that next unit becomes `target_y`.
 
-The conservative prompt rule is critical: **the unit immediately after the removed span must contain actual computation, a derived fact, or a logical deduction.** It must not be another goal statement, intent statement, or meta-commentary. If the next unit is not useful, D must return `has_removal=false`.
+The valid-target rule is critical: **the unit immediately after the removed span must advance reasoning toward the answer.** Valid targets include a numeric computation, a factual extraction from context, an option evaluation with stated reasoning, a logical deduction, or a definition that establishes a needed fact. It must NOT be another goal/intent statement, meta-commentary, or a bare section label (e.g. `*Company A:*` with no content). If no valid target follows, D must return `has_removal=false`. See `prompts/aggressive-skip-v1.txt` for the current recommended prompt encoding this rule.
 
 #### 6. Build the canonical row
 
@@ -508,7 +508,7 @@ Training runs on HF Jobs with `scripts/train_pt_dataset_job.py`; it requires `HF
 | `hf-cli` | When running HF CLI commands (login, upload, download) |
 | `testing` | Before writing or modifying tests — behavior tests only, heavy tests opt-in |
 | `coding-principles` | Before and after you write code — ensure it follows the project's coding principles |
-| `colab-pipeline-inspection` | When running pipeline inspection with real Gemma-4 on Colab GPU — D prompt iteration, unit-split strategy testing, any inspection that requires the fine-tuned model |
+| `colab-pipeline-inspection` | When running pipeline inspection with the real generator model on a Colab GPU — D prompt iteration, unit-split strategy testing, trying different G checkpoints, any inspection that needs the full model on GPU |
 
 **Rule:** after any session where you discover a new pattern, fix a bug, or learn a constraint not yet captured — update the relevant skill before ending the session.
 

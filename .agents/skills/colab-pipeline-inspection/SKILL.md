@@ -1,13 +1,13 @@
 ---
 name: colab-pipeline-inspection
-description: Use when running pipeline inspection with the real Gemma-4 fine-tune on Colab GPU — iterating D prompts, testing unit-split strategies, or any inspection that requires the full model (not the Gemma-4-API proxy used by scripts/pipeline_inspection.py).
+description: Use when running pipeline inspection with the real generator model on a Colab GPU — iterating D prompts, testing unit-split strategies, or trying different G checkpoints (any inspection that needs the full model on GPU, not the API proxy used by scripts/pipeline_inspection.py).
 ---
 
 # Colab Pipeline Inspection
 
-The local `scripts/pipeline_inspection.py` uses the Gemma-4-API proxy (fast, cheap, inspection-only). For real G — `avreymi/gemma-4-E2B-it-reasoning-pruning` on GPU — use **colab-cli** to provision a T4 session, load the model once, then iterate live without restarting.
+The local `scripts/pipeline_inspection.py` uses an API proxy (fast, cheap, inspection-only). To inspect with the **real generator model on a GPU** — whichever model is under investigation — use **colab-cli** to provision a T4 session, load the model once, then iterate live without restarting.
 
-**colab-mcp** (`open_colab_browser_connection`) requires an active browser Colab session — it cannot be used by agents operating headlessly. Use colab-cli only.
+G is never hardcoded: the setup script builds it from `config.generator`, so swapping the model under test is just editing `config.generator["model_id"]` — the same live-edit pattern used for D prompts below.
 
 ## Critical Constraints
 
@@ -37,8 +37,18 @@ colab exec -s inspect -f scripts/colab_inspect_setup.py --timeout 600
 
 **Verify setup completed:**
 ```bash
-echo "print(f'G={generator.source_model}, Q={len(questions)}, D-prompt={config.decision[\"prompt_version\"]}')" \
+echo "print(f'G={config.generator[\"model_id\"]}, Q={len(questions)}, D-prompt={config.decision[\"prompt_version\"]}')" \
   | colab exec -s inspect --timeout 15
+```
+
+**Swap the G model under test (no file edits):**
+```bash
+echo "
+from dataclasses import replace
+config.generator['model_id'] = 'some-org/some-other-model'
+generator = create_generator_from_config(config.generator, config.generation, max_units_per_batch=2)
+print('G ready:', config.generator['model_id'])
+" | colab exec -s inspect --timeout 600
 ```
 
 ## Phase 2: Iterative Inspection (fast, no model reload)
@@ -118,16 +128,11 @@ colab log -s inspect -o output/pipeline_inspection/session.md
 colab stop -s inspect
 ```
 
-## Running the Notebook Headlessly
+## Relationship to the notebook
 
-The notebook (`notebooks/data_creation_playground.ipynb`) is headless-safe after the secrets fix — it checks env vars before calling Colab userdata. To run it instead of the setup script:
+`scripts/colab_inspect_setup.py` is the headless equivalent of the browser notebook's setup cells (`notebooks/data_creation_playground.ipynb`): both load the config, build G and D, load questions, and call the **same** loop entry point `run_pipeline_inspection` / `build_rows_for_question`. Each `colab exec` stdin snippet is the equivalent of running one notebook cell against the persistent kernel. Humans use the notebook in a browser; agents use this script + stdin snippets. Keep the two in sync when the library API changes (Notebook Alignment Rule).
 
-```bash
-# Set secrets first (same as above), then:
-colab exec -s inspect -f notebooks/data_creation_playground.ipynb --timeout 600
-```
-
-This runs all notebook cells in order. Prefer the setup script for clean agent use; use the notebook when you want to match the human interactive workflow exactly.
+(The setup script builds G config-driven via `create_generator_from_config` so any model works; the notebook still constructs its generator inline — making it config-driven too is a worthwhile follow-up for full model-variety parity.)
 
 ## Troubleshooting
 
